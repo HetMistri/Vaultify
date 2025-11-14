@@ -7,7 +7,7 @@ import java.security.SecureRandom;
  * Intentionally minimal with TODOs, so higher layers can compile against
  * expected method signatures. Real AES-GCM implementation will be added later.
  */
-public class AESUtil {
+public class AESEngine {
     public static final int AES_256_KEY_BYTES = 32; // 256-bit
     public static final int GCM_IV_BYTES = 12; // 96-bit IV for GCM
 

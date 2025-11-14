@@ -10,7 +10,7 @@ import java.security.PublicKey;
  * Provides method signatures for key generation and basic encrypt/decrypt.
  * Implementations will be added in a later iteration (RSA/OAEP recommended).
  */
-public class RSAUtil {
+public class RSAEngine {
 
     /**
      * Generate an RSA keypair with the given key size (e.g., 2048 or 3072).
