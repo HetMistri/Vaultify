@@ -34,7 +34,6 @@ Thumbs.db
 # Environment Variables
 ##############################
 .env
-.env.example
 .env.DEVELOPMENT
 
 ##############################
