@@ -1,5 +1,6 @@
 package com.vaultify.cli;
 
+import com.vaultify.db.Database;
 import java.util.Scanner;
 
 public class CommandRouter {
@@ -14,7 +15,9 @@ public class CommandRouter {
             String cmd = scanner.nextLine();
 
             switch (cmd) {
-                case "help" -> System.out.println("Available commands: verify, login, vault, exit");
+                case "help" -> System.out.println("Available commands: dbtest, verify, login, vault, exit");
+
+                case "dbtest" -> Database.testConnection();
 
                 case "verify" -> System.out.println("Usage: verify <token> <certificate_path>");
 
