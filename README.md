@@ -1,303 +1,605 @@
-# Vaultify — Secure, Multithreaded Credential Vault (Java)
+# Vaultify — Secure Credential Vault System
 
-Vaultify is a local-first, encrypted credential vault implemented in pure Java. It demonstrates strong OOP design, multithreading, hybrid cryptography, JDBC persistence (PostgreSQL), and a blockchain-inspired immutable ledger for auditability. The primary user interface is a command-line dashboard.
+[![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/)
+[![Gradle](https://img.shields.io/badge/Gradle-8.10-blue.svg)](https://gradle.org/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
 
-This README summarizes the architecture, how to build and run the system (locally and with Docker), available CLI commands, common troubleshooting steps, and pointers to the important code modules.
+Vaultify is a **Java-based secure credential vault** system demonstrating enterprise-grade software architecture with OOP design patterns, multithreading, cryptographic abstractions, JDBC persistence, and blockchain-inspired audit ledger.
 
----
+## 🎯 Project Status
 
-Quick links
-- Project root: the repository contains `src/`, `resources/`, `docker/`, and `docker-compose.yml`.
-- Entry point: `com.vaultify.app.VaultifyApplication`
+**Current Implementation Phase:** Day 1 - Architecture & Skeleton (Complete ✅)
 
----
+- ✅ **Service Layer:** All 6 services defined (UserService, VaultService, AuthService, TokenService, LedgerService, VerificationService)
+- ✅ **Crypto Layer:** CryptoEngine interface with AES & RSA implementations (skeletons)
+- ✅ **Threading Layer:** ThreadManager with async execution, scheduling, and graceful shutdown
+- ✅ **Ledger System:** Fully functional blockchain-inspired ledger with integrity verification
+- ✅ **Build System:** Gradle 8.10 with custom tasks, fat JAR packaging
+- ✅ **Docker:** Multi-stage builds, health checks, environment variable support
+- ⏳ **DAO Layer:** Skeleton classes (implementation pending)
+- ⏳ **Business Logic:** Service methods are TODO stubs awaiting implementation
 
-Table of contents
-- What Vaultify is
-- Architecture overview (packages & responsibilities)
-- System layer breakdown (CLI, Model, Crypto, DAO, Service, Ledger, Threading, Util)
-- Typical end-to-end flow (Add credential)
-- Build & run (local Gradle and Docker Compose)
-- Running the interactive CLI in Docker
-- Troubleshooting & verification
-- Testing notes
-- Minimal code map
+## 📋 Table of Contents
 
----
+- [Features](#-features)
+- [Architecture](#-architecture)
+- [Project Structure](#-project-structure)
+- [Prerequisites](#-prerequisites)
+- [Quick Start](#-quick-start)
+- [Configuration](#-configuration)
+- [Development](#-development)
+- [Docker Deployment](#-docker-deployment)
+- [Implementation Roadmap](#-implementation-roadmap)
+- [Security Considerations](#-security-considerations)
+- [Contributing](#-contributing)
 
-What Vaultify is
-----------------
-Vaultify is a secure, multithreaded, blockchain-inspired credential vault for local use. Key capabilities:
-- Secure credential storage using a hybrid AES + RSA model
-- Asynchronous background processing for expensive tasks (encryption, ledger writes, logging)
-- Immutable audit history: a hash-linked ledger of vault operations
-- CLI-first experience for demonstrations and real-world usage
-- JDBC persistence using PostgreSQL and a DAO layer
-- Clean OOP architecture showcasing abstraction and modularity
+## ✨ Features
 
----
+### Planned Architecture Features
 
-Architecture overview
----------------------
-Top-level package: `com.vaultify`
-- `cli/` — CLI UI & command handling (primary interface)
-- `controller/` — optional REST API controllers (if present)
-- `service/` — business logic layer (VaultService, UserService, LedgerService, VerificationService, TokenService)
-- `model/` — domain entities (User, Vault, Credential, Token, CredentialMetadata, etc.)
-- `crypto/` — cryptographic engines and utilities (AES, RSA, Hashing, KeyManager)
-- `dao/` — JDBC DAO layer (UserDAO, CredentialDAO, TokenDAO, LedgerDAO)
-- `ledger/` — ledger blocks & ledger engine (immutable hash-linked records)
-- `threading/` or `thread/` — concurrency manager and task classes
-- `util/` — file I/O, token utilities, QR generation, JSON helpers
-- `config/` — centralized configuration (properties)
+- 🔐 **Hybrid Encryption:** AES-256-GCM for data + RSA-2048+ for key wrapping
+- 🔗 **Immutable Ledger:** SHA-256 hash-linked blockchain for audit trails
+- ⚡ **Multithreading:** Async encryption tasks, scheduled token cleanup, background logging
+- 🗄️ **JDBC Persistence:** PostgreSQL with DAO pattern
+- 🎨 **Clean Architecture:** Service → DAO → Database with clear separation
+- 🔌 **Pluggable Crypto:** `CryptoEngine` interface for algorithm flexibility
+- 🐳 **Containerized:** Docker Compose with health checks and volume persistence
 
-Design highlights
-- Crypto abstraction (`CryptoEngine`) with AES & RSA implementations
-- DAO pattern isolating JDBC code & transactions
-- ThreadManager / ExecutorServices centralize asynchronous execution
-- Ledger blocks use SHA-256 and cryptographic linking (prevHash/currentHash)
+### Currently Implemented
 
----
+- ✅ Full project skeleton with proper OOP structure
+- ✅ Working ledger system with genesis block and integrity checks
+- ✅ ThreadManager with ExecutorService pools and graceful shutdown
+- ✅ Configuration management via properties files
+- ✅ Docker multi-stage builds with optimized images
+- ✅ Health checks for database availability
+- ✅ Gradle custom tasks (runLocal, rebuild, dockerBuild)
 
-System layer breakdown
-----------------------
-CLI layer (primary)
-- Text-based interface using Java input (Scanner/Console)
-- Main commands:
-  - `register` — create a new user + RSA keypair
-  - `login` — authenticate and open vault
-  - `add-credential` — add/encrypt a file/credential to vault
-  - `list` — list stored credentials (metadata)
-  - `share` — create a share token for a credential
-  - `verify` — verify a credential or token
-  - `verify-ledger` — verify ledger integrity
-  - `exit` — close the CLI
-- Non-blocking feedback provided while heavy tasks run in background (e.g., progress dots)
+## 🏗️ Architecture
 
-Model layer (core OOP entities)
-- User — vault owner, holds RSA key identifiers
-- Vault — container for credentials (composition)
-- Credential — encrypted file plus metadata
-- ShareToken — short-lived token for sharing access
-- LedgerBlock — immutable record in ledger chain
+### Design Patterns & Principles
 
-Crypto layer
-- `CryptoEngine` interface (abstraction & polymorphism)
-- `RSAEngine` — RSA key ops, key wrapping, signing
-- `AESEngine` — fast symmetric encryption for file payloads
-- Hybrid flow: file encrypted with AES; AES key encrypted with RSA public key
+- **Layered Architecture:** Presentation → Service → DAO → Database
+- **Interface Segregation:** `CryptoEngine` abstraction for encryption algorithms
+- **Dependency Injection:** Services receive dependencies via constructors
+- **Factory Pattern:** Key generation and algorithm selection
+- **DAO Pattern:** Data access abstraction with JDBC
+- **Singleton Pattern:** ThreadManager and configuration management
+- **Strategy Pattern:** Pluggable crypto engines (AES, RSA)
 
-DAO layer (JDBC persistence)
-- DAOs use `PreparedStatement`, transactions, and a `ConnectionManager`
-- Tables: `users`, `credentials`, `tokens`, `ledger`
-- PostgreSQL used as the backing store
+### Package Structure
 
-Service layer
-- `VaultService` — high-level vault ops: add, retrieve, decrypt, delete credentials
-- `UserService` — register/login, key management
-- `LedgerService` — append & verify ledger blocks
-- `VerificationService` — validate shared tokens and signatures
-- All services orchestrate DAOs, crypto layers, and threading
-
-Ledger layer (blockchain-inspired)
-- `LedgerBlock` fields: `prevHash`, `currentHash`, `action`, `credentialId`, `timestamp`
-- New operations append a block; integrity can be verified by recomputing hashes
-- Tamper detection via `LedgerService.verifyIntegrity()`
-
-Threading layer (concurrency backbone)
-- Async tasks: `EncryptionTask` (Callable), `LedgerWriter` (Runnable), `ActivityLogger` (daemon), `TokenExpiryScheduler` (ScheduledExecutorService)
-- `ThreadManager` centralizes ExecutorServices and provides safe shutdown
-
-Utility layer
-- `FileStorageUtil` — encrypted file I/O
-- `QRCodeUtil` — generate QR codes for tokens
-- `LoggerUtil` — structured logging helper
-- `JSONUtil` — JSON serialization helpers for ledger and metadata
-
----
-
-Typical end-to-end flow: Add credential
-1. User issues `add-credential` in the CLI
-2. CLI calls `VaultService.addCredential()`
-3. `ThreadManager` submits `EncryptionTask` to an ExecutorService
-4. `AESEngine` encrypts the file payload
-5. `RSAEngine` encrypts the AES key with the user's public key
-6. Encrypted binary written to disk by `FileStorageUtil`
-7. `CredentialDAO.insert(...)` stores metadata in PostgreSQL
-8. `ThreadManager` submits `LedgerWriter` which appends a new `LedgerBlock` to `ledger.json` and persists to DB
-9. `ActivityLogger` records the operation async
-10. CLI prints confirmation: "Encrypted and Saved"
-
----
-
-Build & run
------------
-Prerequisites
-- JDK 21 (for local build) or use the provided Gradle wrapper
-- Docker Desktop (for Docker-based runs) + Docker Compose v2
-- On Windows use `cmd.exe` or PowerShell; examples below use `cmd.exe` style where relevant
-
-Local (Gradle) build and run
-
-Windows (cmd.exe):
-
-```cmd
-gradlew.bat clean build
-gradlew.bat runLocal
+```
+com.vaultify/
+├── app/              # Application entry point
+│   └── VaultifyApplication.java
+├── cli/              # Command-line interface
+│   └── CommandRouter.java
+├── service/          # Business logic layer
+│   ├── UserService.java
+│   ├── VaultService.java
+│   ├── AuthService.java
+│   ├── TokenService.java
+│   ├── LedgerService.java
+│   └── VerificationService.java
+├── crypto/           # Cryptography layer
+│   ├── CryptoEngine.java (interface)
+│   ├── AESEngine.java
+│   ├── RSAEngine.java
+│   ├── KeyManager.java
+│   └── HashUtil.java
+├── dao/              # Data Access Objects
+│   ├── UserDAO.java
+│   ├── CredentialDAO.java
+│   └── TokenDAO.java
+├── models/           # Domain entities
+│   ├── User.java
+│   ├── Credential.java
+│   ├── CredentialMetadata.java
+│   ├── CredentialType.java
+│   └── Token.java
+├── ledger/           # Blockchain-inspired audit
+│   ├── LedgerEngine.java (✅ Implemented)
+│   └── LedgerBlock.java (✅ Implemented)
+├── threading/        # Concurrency management
+│   ├── ThreadManager.java (✅ Implemented)
+│   ├── EncryptionTask.java
+│   ├── LedgerWriter.java
+│   ├── ActivityLogger.java
+│   └── TokenExpiryScheduler.java
+├── db/               # Database connection
+│   └── Database.java
+├── util/             # Utilities
+│   ├── Config.java
+│   ├── TokenUtil.java
+│   └── CredentialFileManager.java
+└── verifier/         # Certificate verification
+    ├── CertificateVerifier.java
+    ├── CertificateParser.java
+    ├── CertificateData.java
+    └── VerifierMode.java
 ```
 
-macOS / Linux (bash):
+### Layer Responsibilities
 
-```bash
-./gradlew clean build
-./gradlew runLocal
+**Service Layer** (Business Logic)
+
+- Orchestrates workflow between DAO, crypto, and ledger layers
+- Implements business rules and validation
+- Manages transactions and error handling
+- Current state: Method signatures defined, implementations pending
+
+**DAO Layer** (Data Access)
+
+- JDBC operations with PreparedStatements
+- Transaction management
+- Connection pooling
+- Current state: Empty classes, ready for implementation
+
+**Crypto Layer** (Security)
+
+- Implements `CryptoEngine` interface for polymorphism
+- AES-256 symmetric encryption for data
+- RSA asymmetric encryption for key wrapping
+- SHA-256 hashing for integrity
+- Current state: Interface and method signatures ready
+
+**Ledger Layer** (Audit Trail)
+
+- ✅ Genesis block initialization
+- ✅ SHA-256 hash linking (prevHash → currentHash)
+- ✅ Integrity verification
+- ✅ JSON persistence with pretty printing
+- ✅ Thread-safe operations
+
+## 📁 Project Structure
+
+```
+Vaultify/
+├── src/com/vaultify/          # Source code (36 Java classes)
+├── resources/
+│   ├── config.properties       # Application configuration
+│   └── db-scripts/
+│       └── init.sql           # Database initialization
+├── docker/
+│   ├── Dockerfile             # Multi-stage app build
+│   ├── Dockerfile.postgres    # PostgreSQL with init script
+│   └── init-db.sql            # Database schema
+├── vault_data/                # Runtime data (mounted volume)
+│   ├── ledger.json            # Blockchain audit trail
+│   ├── credentials/           # Encrypted credential storage
+│   ├── keys/                  # RSA keypairs
+│   └── certificates/          # Verification certificates
+├── build.gradle               # Build configuration
+├── docker-compose.yml         # Container orchestration
+├── .env.example              # Environment template
+└── README.md                 # This file
 ```
 
-Notes:
-- `runLocal` is not suggested for development as it does not start a database; it assumes a local Postgres instance is running and accessible.
-- `runLocal` is a convenience task that runs `com.vaultify.app.VaultifyApplication` on the classpath.
-- You can also run the jar directly (after `build`):
+## 📦 Prerequisites
 
-Windows:
+### For Local Development
 
-```cmd
-java -jar build\libs\*.jar
+- **JDK 21** (Eclipse Temurin recommended)
+- **Gradle 8.10+** (included via wrapper)
+- **PostgreSQL 16** (if running locally without Docker)
+
+### For Docker Deployment
+
+- **Docker Engine 24+**
+- **Docker Compose v2.20+**
+
+### Verify Installation
+
+```powershell
+# Check Java
+java -version
+
+# Check Gradle
+.\gradlew.bat --version
+
+# Check Docker
+docker --version
+docker compose version
 ```
 
-Unix:
+## 🚀 Quick Start
 
-```bash
-java -jar build/libs/*.jar
-```
+### Option 1: Docker (Recommended)
 
-Docker (recommended for isolated and development runs)
+```powershell
+# Clone the repository
+git clone https://github.com/HetMistri/Vaultify.git
+cd Vaultify
 
-Build images and start services (project root):
+# Copy environment template (optional)
+cp .env.example .env
 
-```cmd
-# build images
-docker compose build
-
-# start db + app (foreground)
-docker compose up
-
-# build and start in one command
+# Build and run with Docker Compose
 docker compose up --build
-```
 
-Background / attach mode:
-
-```cmd
-# start in background
-docker compose up -d --build
-
-# attach to interactive CLI container
-docker attach vaultify_app
-# detach without stopping: Ctrl+P, Ctrl+Q
-```
-
-Run a fresh interactive container for the CLI (recommended):
-
-```cmd
+# Or run interactively for CLI
 docker compose run --rm app
 ```
 
-Run a shell inside the app container for debugging:
+### Option 2: Local Build
 
-```cmd
-docker compose run --rm app /bin/sh
-# then inside container: java -jar /app/app.jar
+```powershell
+# Build the project
+.\gradlew.bat clean build
+
+# Run custom tasks
+.\gradlew.bat rebuild      # Clean + build
+.\gradlew.bat runLocal     # Run without Docker (needs local PostgreSQL)
+.\gradlew.bat dockerBuild  # Build Docker images
+
+# Run the JAR directly
+java -jar build\libs\Vaultify-1.0.0.jar
 ```
 
-Volume mounts & persistence
-- `docker-compose.yml` mounts `./vault_data` into `/app/vault_data` inside the app container. Put keys, certificates, and the ledger there for persistence and inspection.
-- Postgres data persisted to a named volume `vaultify_pgdata`.
+## ⚙️ Configuration
 
----
+### Environment Variables
 
-CLI: Common commands
-- `register` — create user and RSA keypair
-- `login` — log in to a vault (select user)
-- `add-credential` — add and encrypt a file to the vault
-- `list` — show credentials (metadata only)
-- `share` — create a short-lived ShareToken
-- `verify` — validate credential or token
-- `verify-ledger` — verify the integrity of the entire ledger
-- `exit` — quit the CLI
-
----
-
-Troubleshooting & tips
-----------------------
-1) Docker Desktop "pipe" or connection errors (Windows)
-- Symptom: errors referencing `dockerDesktopLinuxEngine` or a missing pipe.
-- Remediation: start Docker Desktop, ensure the Docker daemon is running, and check `docker context ls` and `docker info`.
-
-2) "Could not find or load main class com.vaultify.app.VaultifyApplication"
-- Symptom: container (or local run) crashes with ClassNotFoundException for the main class.
-- Checks:
-  - Ensure `gradlew clean build` completed successfully and a jar was created in `build/libs`.
-  - Inspect jar contents:
-
-Windows:
-
-```cmd
-jar tf build\libs\*.jar | findstr VaultifyApplication
-```
-
-Unix:
+Create a `.env` file from the template:
 
 ```bash
-jar tf build/libs/*.jar | grep VaultifyApplication
+# Database Configuration
+POSTGRES_DB=vaultify_db
+POSTGRES_USER=vaultify_user
+POSTGRES_PASSWORD=your_secure_password_here
 ```
 
-  - If the class is missing, ensure compilation succeeded and that `src/` is arranged correctly under package paths (`src/com/vaultify/...`).
-  - The project's `jar` task is configured to include runtime classpath by unpacking dependencies; if you still see missing classes, build locally and run `java -cp build\libs\* com.vaultify.app.VaultifyApplication` for debugging.
+### Configuration File (`resources/config.properties`)
 
-3) Postgres connection issues
-- Check `docker-compose.yml` credentials (default in project: `vaultify_db` / `vaultify_user` / `secret123`) and `resources/config.properties` if present.
-- Ensure the database container is healthy and listening on port 5432.
-- If running locally, ensure a Postgres instance is running and accessible with the correct credentials.
+```properties
+# Database Connection
+db.url=jdbc:postgresql://db:5432/vaultify_db
+db.user=vaultify_user
+db.password=secret123
 
-4) CLI interactivity inside Docker
-- The `app` service sets `stdin_open: true` and `tty: true`. Use `docker compose run --rm app` or `docker attach vaultify_app` to get an interactive prompt.
+# Storage Paths
+vault.storage=./vault_data/credentials/
+ledger.file=./vault_data/ledger.json
+rsa.public=./vault_data/keys/public.pem
+rsa.private=./vault_data/keys/private.pem
 
----
-
-Testing
--------
-- Unit tests: JUnit 5 tests (service and DAO tests) should be available in the `test` source set.
-- Ledger integrity test should exercise tamper detection.
-- Manual CLI tests: add/remove credentials, share/verify, and verify-ledger.
-
-Run tests locally:
-
-```cmd
-# Windows
-gradlew.bat test
-
-# Unix
-./gradlew test
+# Token Settings
+token.expiryHours=48
+certificate.output=./vault_data/certificates/
 ```
 
+**⚠️ Security Notes:**
+
+- Never commit `.env` with real credentials
+- Use strong passwords in production
+- Rotate credentials regularly
+- Consider using Docker secrets for production deployments
+
+## 🛠️ Development
+
+### Build Tasks
+
+```powershell
+# Standard Gradle tasks
+.\gradlew.bat build          # Compile and package
+.\gradlew.bat test           # Run tests
+.\gradlew.bat clean          # Clean build artifacts
+
+# Custom Vaultify tasks
+.\gradlew.bat runLocal       # Run locally (requires PostgreSQL)
+.\gradlew.bat rebuild        # Clean + build
+.\gradlew.bat dockerBuild    # Build Docker images
+
+# View all tasks
+.\gradlew.bat tasks --group=vaultify
+```
+
+### Project Statistics
+
+- **Total Classes:** 36 Java files
+- **Packages:** 11 distinct packages
+- **Lines of Code:** ~1,500+ (skeleton implementation)
+- **Dependencies:** 2 (PostgreSQL JDBC, Gson)
+- **Build Tool:** Gradle 8.10
+- **Target Platform:** Java 21 (LTS)
+
+### Key Implementation Details
+
+**Ledger System (Fully Implemented)**
+
+```java
+// Genesis block creation
+LedgerEngine engine = new LedgerEngine();
+
+// Add blocks
+LedgerBlock block = engine.addBlock("ADD_CREDENTIAL", dataHash);
+
+// Verify integrity
+List<String> errors = engine.verifyIntegrity();
+```
+
+**Threading (Fully Implemented)**
+
+```java
+// Async execution
+ThreadManager.runAsync(() -> {
+    // Background task
+});
+
+// Scheduled tasks
+ThreadManager.scheduleAtFixedRate(task, 0, 1, TimeUnit.HOURS);
+
+// Graceful shutdown
+ThreadManager.shutdown();
+```
+
+**Crypto Interface (Ready for Implementation)**
+
+```java
+CryptoEngine aes = new AESEngine();
+byte[] encrypted = aes.encrypt(plaintext);
+byte[] decrypted = aes.decrypt(encrypted);
+```
+
+## 🐳 Docker Deployment
+
+### Docker Architecture
+
+**Multi-Stage Build:**
+
+- **Stage 1:** Uses `gradle:8.6-jdk21` to build the application
+- **Stage 2:** Uses `eclipse-temurin:21-jre` for minimal runtime image
+
+**Services:**
+
+- `db` - PostgreSQL 16 with health checks
+- `app` - Vaultify application with interactive TTY
+
+### Docker Commands
+
+```powershell
+# Build and start all services
+docker compose up --build
+
+# Run in background
+docker compose up -d --build
+
+# View logs
+docker compose logs -f app
+
+# Stop services
+docker compose down
+
+# Remove volumes (clean slate)
+docker compose down -v
+
+# Interactive CLI session
+docker compose run --rm app
+
+# Debug shell
+docker compose run --rm app /bin/sh
+```
+
+### Docker Features
+
+✅ **Health Checks:** Database waits for PostgreSQL readiness  
+✅ **Volume Persistence:** Data survives container restarts  
+✅ **Environment Variables:** Externalized configuration  
+✅ **Build Caching:** Faster subsequent builds  
+✅ **Interactive TTY:** Full CLI support in containers
+
+### Troubleshooting Docker
+
+**Database Connection Issues:**
+
+```powershell
+# Check database health
+docker compose ps
+docker compose logs db
+
+# Verify network connectivity
+docker compose exec app ping db
+```
+
+**Container Won't Start:**
+
+```powershell
+# Check for port conflicts
+netstat -ano | findstr :5432
+
+# View container logs
+docker compose logs app
+```
+
+## 🗺️ Implementation Roadmap
+
+### ✅ Phase 1: Architecture & Skeleton (Complete)
+
+- [x] Package structure and class organization
+- [x] Service layer interfaces
+- [x] CryptoEngine abstraction with AES/RSA implementations
+- [x] ThreadManager with executor pools
+- [x] LedgerEngine with blockchain functionality
+- [x] Gradle build configuration with custom tasks
+- [x] Docker multi-stage builds
+- [x] Docker Compose with health checks
+
+### 🔄 Phase 2: Core Implementation (In Progress)
+
+- [ ] Implement AES-256-GCM encryption/decryption
+- [ ] Implement RSA-2048+ key generation and operations
+- [ ] KeyManager for PEM key persistence
+- [ ] Database connection pooling
+- [ ] DAO layer with PreparedStatements
+- [ ] Service layer business logic
+- [ ] CLI command routing and handlers
+
+### 📅 Phase 3: Advanced Features (Planned)
+
+- [ ] User registration and authentication
+- [ ] Credential encryption and storage
+- [ ] Token generation and validation
+- [ ] Certificate verification
+- [ ] Ledger integrity monitoring
+- [ ] Activity logging and audit trails
+
+### 🧪 Phase 4: Testing & Documentation (Planned)
+
+- [ ] Unit tests for crypto operations
+- [ ] Integration tests for services
+- [ ] End-to-end CLI tests
+- [ ] Performance benchmarks
+- [ ] Security audit
+- [ ] API documentation
+
+## 🔐 Security Considerations
+
+### Current Security Posture
+
+**✅ Implemented:**
+
+- SHA-256 hashing for ledger integrity
+- Immutable audit trail via blockchain design
+- SecureRandom for key/IV generation
+- Environment variable support for credentials
+- `.env` excluded from version control
+
+**⚠️ Pending Implementation:**
+
+- AES-GCM authenticated encryption
+- RSA-OAEP padding for key wrapping
+- Key derivation functions (PBKDF2/Argon2)
+- TLS for database connections
+- Input validation and sanitization
+- SQL injection prevention via PreparedStatements
+- Rate limiting for authentication attempts
+
+### Best Practices (When Implementing)
+
+1. **Never hardcode secrets** - Use environment variables or secrets management
+2. **Use strong algorithms** - AES-256-GCM, RSA-2048+, SHA-256
+3. **Proper key storage** - Encrypt private keys at rest, use OS keychains
+4. **Secure random** - Use `SecureRandom` for all cryptographic randomness
+5. **Input validation** - Validate and sanitize all user inputs
+6. **Least privilege** - Database users with minimal required permissions
+7. **Audit logging** - Log all security-relevant events to ledger
+
+## 🧪 Testing
+
+### Test Strategy
+
+**Current Status:** Test infrastructure ready, implementation pending
+
+```powershell
+# Run all tests
+.\gradlew.bat test
+
+# Run with coverage
+.\gradlew.bat test jacocoTestReport
+
+# Run specific test class
+.\gradlew.bat test --tests "LedgerEngineTest"
+```
+
+### Planned Test Coverage
+
+- **Unit Tests:** Crypto operations, hashing, key generation
+- **Integration Tests:** Service layer with database interactions
+- **End-to-End Tests:** Full workflow simulation via CLI
+- **Performance Tests:** Encryption throughput, ledger performance
+- **Security Tests:** SQL injection, input validation, crypto strength
+
+## 🤝 Contributing
+
+### Development Workflow
+
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
+3. **Commit** your changes (`git commit -m 'Add amazing feature'`)
+4. **Push** to the branch (`git push origin feature/amazing-feature`)
+5. **Open** a Pull Request
+
+### Coding Standards
+
+- **Java Style:** Follow Oracle Java conventions
+- **Naming:** Clear, descriptive variable/method names
+- **Documentation:** Javadoc for all public APIs
+- **Testing:** Unit tests for all new features
+- **Security:** No hardcoded secrets, validate inputs
+
+### Branch Strategy
+
+- `master` - Production-ready code
+- `dev` - Integration branch
+- `feature/*` - Feature development branches
+- `bugfix/*` - Bug fix branches
+
+## 📊 Project Metrics
+
+| Metric         | Value        |
+| -------------- | ------------ |
+| Java Classes   | 36           |
+| Packages       | 11           |
+| Services       | 6            |
+| DAO Classes    | 3            |
+| Crypto Engines | 2 (AES, RSA) |
+| Thread Tasks   | 4            |
+| Model Classes  | 5            |
+| Gradle Version | 8.10         |
+| Java Version   | 21 (LTS)     |
+| Docker Images  | 2 (app, db)  |
+
+## 📝 Code Map
+
+### Entry Points
+
+- `VaultifyApplication.java` - Main application entry
+- `CommandRouter.java` - CLI command dispatcher
+
+### Core Components
+
+- `LedgerEngine.java` ✅ - Blockchain audit trail (fully implemented)
+- `ThreadManager.java` ✅ - Async execution manager (fully implemented)
+- `HashUtil.java` ✅ - SHA-256 hashing (fully implemented)
+
+### Service Layer (Skeleton)
+
+- `UserService` - User registration and authentication
+- `VaultService` - Credential management
+- `AuthService` - Login/logout operations
+- `TokenService` - Token generation and validation
+- `LedgerService` - Ledger operations wrapper
+- `VerificationService` - Certificate and token verification
+
+### Crypto Layer (Skeleton)
+
+- `CryptoEngine` (interface) - Encryption abstraction
+- `AESEngine` - Symmetric encryption implementation
+- `RSAEngine` - Asymmetric encryption implementation
+- `KeyManager` - Key storage and retrieval
+
+## 📄 License
+
+This project is developed as an academic assignment for demonstrating software engineering principles.
+
+## 👥 Authors
+
+- **Het Mistri** - Architecture, Services, Threading, Crypto
+- **Team** - Collaborative development
+
+## 🔗 Links
+
+- **GitHub Repository:** [HetMistri/Vaultify](https://github.com/HetMistri/Vaultify)
+- **Issue Tracker:** [GitHub Issues](https://github.com/HetMistri/Vaultify/issues)
+
 ---
 
-Minimal code map
-----------------
-- `src/com/vaultify/app/VaultifyApplication.java` — application entry point (CLI bootstrap)
-- `src/com/vaultify/cli/CommandRouter.java` — parses commands and prints CLI dashboard
-- `src/com/vaultify/crypto/` — `AESUtil`, `RSAUtil`, `HashUtil`, `KeyManager`
-- `src/com/vaultify/dao/` — `UserDAO`, `CredentialDAO`, `TokenDAO`
-- `src/com/vaultify/ledger/` — `LedgerEngine`, `LedgerBlock`
-- `src/com/vaultify/service/` — `VaultService`, `UserService`, `LedgerService`, `VerificationService`, `TokenService`
-- `resources/` — `config.properties`, DB init scripts
-- `docker/` — `Dockerfile` (multi-stage Java build), `Dockerfile.postgres`
-- `docker-compose.yml` — wires `db` and `app` and mounts `vault_data`
+**Last Updated:** November 14, 2025  
+**Version:** 1.0.0 (Day 1 - Architecture Complete)  
+**Status:** 🟡 In Development - Architecture Phase Complete
 
----
-
-Security & cryptography
------------------------
 - RSA-2048 per-user keypairs
 - AES-256 for content encryption
 - AES keys wrapped with RSA public key

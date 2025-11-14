@@ -31,6 +31,13 @@ Thumbs.db
 /docker/*.pid
 
 ##############################
+# Environment Variables
+##############################
+.env
+.env.example
+.env.DEVELOPMENT
+
+##############################
 # Java
 ##############################
 *.class
