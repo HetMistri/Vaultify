@@ -15,7 +15,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-vaultify_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret123}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vaultify_user}"]
+      test: ["CMD-SHELL", "pg_isready -U vaultify_user -d vaultify_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,13 +36,5 @@ services:
     command: ["/bin/sh", "-c", "java -jar /app/app.jar"]
     volumes:
       - ./vault_data:/app/vault_data
-    environment:
-      # Database connection - maps to Config.java keys (db.host, db.port, db.name, db.user, db.password)
-      DB_HOST: ${DB_HOST:-db}
-      DB_PORT: ${DB_PORT:-5432}
-      DB_NAME: ${DB_NAME:-vaultify_db}
-      DB_USER: ${DB_USER:-vaultify_user}
-      DB_PASSWORD: ${DB_PASSWORD:-secret123}
-
 volumes:
   vaultify_pgdata:

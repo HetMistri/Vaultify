@@ -17,8 +17,6 @@ public class CommandRouter {
             switch (cmd) {
                 case "help" -> System.out.println("Available commands: dbtest, verify, login, vault, exit");
 
-                case "dbtest" -> Database.testConnection();
-
                 case "verify" -> System.out.println("Usage: verify <token> <certificate_path>");
 
                 case "login" -> System.out.println("Login not implemented yet.");
