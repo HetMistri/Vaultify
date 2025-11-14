@@ -1,19 +1,22 @@
 package com.vaultify.ledger;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.reflect.TypeToken;
-import com.vaultify.util.Config;
-import com.vaultify.crypto.HashUtil;
-
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonIOException;
+import com.google.gson.JsonSyntaxException;
+import com.google.gson.reflect.TypeToken;
+import com.vaultify.crypto.HashUtil;
+import com.vaultify.util.Config;
 
 /**
  * LedgerEngine:
@@ -51,7 +54,8 @@ public class LedgerEngine {
             }
 
             try (FileReader fr = new FileReader(ledgerFile, StandardCharsets.UTF_8)) {
-                Type listType = new TypeToken<List<LedgerBlock>>() {}.getType();
+                Type listType = new TypeToken<List<LedgerBlock>>() {
+                }.getType();
                 List<LedgerBlock> loaded = gson.fromJson(fr, listType);
                 if (loaded != null) {
                     chain.clear();
@@ -59,7 +63,7 @@ public class LedgerEngine {
                 }
             }
             createGenesisIfNeeded();
-        } catch (Exception e) {
+        } catch (JsonIOException | JsonSyntaxException | IOException e) {
             throw new RuntimeException("Failed to load ledger file: " + ledgerFile.getAbsolutePath(), e);
         }
     }

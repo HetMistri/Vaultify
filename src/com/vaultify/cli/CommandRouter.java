@@ -14,31 +14,23 @@ public class CommandRouter {
             String cmd = scanner.nextLine();
 
             switch (cmd) {
-                //Add more case later for different commands
-                case "help":
-                    System.out.println("Available commands: help, generate, verify, login, vault, exit");
-                    break;
+                case "help" -> System.out.println("Available commands: verify, login, vault, exit");
 
-                case "verify":
-                    System.out.println("Usage: verify <token> <certificate_path>");
-                    break;
+                case "verify" -> System.out.println("Usage: verify <token> <certificate_path>");
 
-                case "login":
-                    System.out.println("Login not implemented yet.");
-                    break;
+                case "login" -> System.out.println("Login not implemented yet.");
 
-                case "vault":
-                    System.out.println("Vault commands not implemented yet.");
-                    break;
+                case "vault" -> System.out.println("Vault commands not implemented yet.");
 
-                case "exit":
+                case "exit" -> {
                     System.out.println("Exiting Vaultify CLI.");
                     scanner.close();
                     return;
+                }
 
-                default:
-                    System.out.println("Unknown command: " + cmd);
+                default -> System.out.println("Unknown command: " + cmd);
             }
-        }
+            //Add more case later for different commands
+                    }
     }
 }
