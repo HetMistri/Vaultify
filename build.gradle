@@ -1,0 +1,75 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.vaultify'
+version = '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.postgresql:postgresql:42.7.1'
+    implementation 'com.google.code.gson:gson:2.10.1'
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src']
+        }
+        resources {
+            srcDirs = ['resources']
+        }
+    }
+}
+
+application {
+    mainClass = 'com.vaultify.app.VaultifyApplication'
+}
+
+jar {
+    // Ensure duplicate classes/resources don't break packaging
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    // Jar manifest (for java -jar)
+    manifest {
+        attributes(
+                'Main-Class': 'com.vaultify.app.VaultifyApplication'
+        )
+    }
+
+    // Build fat jar (includes all runtime dependencies)
+    from {
+        configurations.runtimeClasspath.collect { file ->
+            file.isDirectory() ? file : zipTree(file)
+        }
+    }
+}
+
+
+tasks.register('runLocal', JavaExec) {
+    group = "vaultify"
+    description = "Run Vaultify locally without Docker"
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.vaultify.app.VaultifyApplication'
+}
+
+tasks.register('rebuild') {
+    group = "vaultify"
+    description = "Clean and build the entire project"
+    dependsOn 'clean', 'build'
+}
+
+tasks.register('dockerBuild') {
+    group = "vaultify"
+    description = "Build Docker images after building jar"
+    dependsOn 'build'
+    doLast {
+        exec {
+            commandLine 'docker', 'compose', 'build'
+        }
+    }
+}

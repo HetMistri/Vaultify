@@ -1,4 +1,4 @@
 package com.vaultify.dao;
 
-public class temp {
+public class CredentialDAO {
 }

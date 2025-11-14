@@ -1,4 +1,4 @@
 package com.vaultify.crypto;
 
-public class temp {
+public class AESUtil {
 }
