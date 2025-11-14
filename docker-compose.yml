@@ -37,11 +37,12 @@ services:
     volumes:
       - ./vault_data:/app/vault_data
     environment:
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_NAME: ${POSTGRES_DB:-vaultify_db}
-      DB_USER: ${POSTGRES_USER:-vaultify_user}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret123}
+      # Database connection - maps to Config.java keys (db.host, db.port, db.name, db.user, db.password)
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-vaultify_db}
+      DB_USER: ${DB_USER:-vaultify_user}
+      DB_PASSWORD: ${DB_PASSWORD:-secret123}
 
 volumes:
   vaultify_pgdata:
