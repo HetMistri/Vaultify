@@ -16,7 +16,7 @@ public class CommandRouter {
             switch (cmd) {
                 //Add more case later for different commands
                 case "help":
-                    System.out.println("Available commands: help, generate, verify, login, vault, exit");
+                    System.out.println("Available commands: verify, login, vault, exit");
                     break;
 
                 case "verify":

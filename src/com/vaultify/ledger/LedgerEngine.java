@@ -51,7 +51,8 @@ public class LedgerEngine {
             }
 
             try (FileReader fr = new FileReader(ledgerFile, StandardCharsets.UTF_8)) {
-                Type listType = new TypeToken<List<LedgerBlock>>() {}.getType();
+                Type listType = new TypeToken<List<LedgerBlock>>() {
+                }.getType();
                 List<LedgerBlock> loaded = gson.fromJson(fr, listType);
                 if (loaded != null) {
                     chain.clear();

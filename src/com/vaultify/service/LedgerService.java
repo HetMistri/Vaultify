@@ -17,8 +17,8 @@ public class LedgerService {
         this.engine = new LedgerEngine();
     }
 
-    public LedgerBlock appendBlock(String action, String dataHash) {
-        return engine.addBlock(action, dataHash);
+    public void appendBlock(String action, String dataHash) {
+        engine.addBlock(action, dataHash);
     }
 
     public List<String> verifyIntegrity() {

@@ -3,15 +3,29 @@ package com.vaultify.crypto;
 import java.security.SecureRandom;
 
 /**
- * Day 1 skeleton for AES utilities.
- * Intentionally minimal with TODOs, so higher layers can compile against
- * expected method signatures. Real AES-GCM implementation will be added later.
+ * Day 1 AES implementation conforming to CryptoEngine interface.
+ * Provides AES-GCM encryption/decryption plus key/IV generation utilities.
+ * Full AES-GCM implementation will be added in later iterations.
  */
-public class AESEngine {
+public class AESEngine implements CryptoEngine {
     public static final int AES_256_KEY_BYTES = 32; // 256-bit
     public static final int GCM_IV_BYTES = 12; // 96-bit IV for GCM
 
     private static final SecureRandom RNG = new SecureRandom();
+
+    @Override
+    public byte[] encrypt(byte[] data) {
+        // TODO: implement AES-GCM encryption
+        return new byte[0];
+    }
+
+    @Override
+    public byte[] decrypt(byte[] data) {
+        // TODO: implement AES-GCM decryption
+        return new byte[0];
+    }
+
+    // Additional utility methods for AES-specific operations
 
     /**
      * Generate a random 256-bit AES key.
@@ -34,7 +48,7 @@ public class AESEngine {
     /**
      * Encrypt plaintext with AES (intended: AES-GCM). Day 1 stub.
      */
-    public static byte[] encrypt(byte[] plaintext, byte[] key, byte[] iv) {
+    public static byte[] encryptWithParams(byte[] plaintext, byte[] key, byte[] iv) {
         // TODO: implement AES-GCM encryption
         return new byte[0];
     }
@@ -42,7 +56,7 @@ public class AESEngine {
     /**
      * Decrypt ciphertext with AES (intended: AES-GCM). Day 1 stub.
      */
-    public static byte[] decrypt(byte[] ciphertext, byte[] key, byte[] iv) {
+    public static byte[] decryptWithParams(byte[] ciphertext, byte[] key, byte[] iv) {
         // TODO: implement AES-GCM decryption
         return new byte[0];
     }

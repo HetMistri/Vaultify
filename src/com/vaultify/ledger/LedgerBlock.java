@@ -9,7 +9,8 @@ public class LedgerBlock {
     private String hash;      // hash over (index + timestamp + action + dataHash + prevHash)
 
     // Required by Gson
-    public LedgerBlock() {}
+    public LedgerBlock() {
+    }
 
     public LedgerBlock(int index, long timestamp, String action, String dataHash, String prevHash, String hash) {
         this.index = index;
@@ -20,21 +21,51 @@ public class LedgerBlock {
         this.hash = hash;
     }
 
-    public int getIndex() { return index; }
-    public void setIndex(int index) { this.index = index; }
+    public int getIndex() {
+        return index;
+    }
 
-    public long getTimestamp() { return timestamp; }
-    public void setTimestamp(long timestamp) { this.timestamp = timestamp; }
+    public void setIndex(int index) {
+        this.index = index;
+    }
 
-    public String getAction() { return action; }
-    public void setAction(String action) { this.action = action; }
+    public long getTimestamp() {
+        return timestamp;
+    }
 
-    public String getDataHash() { return dataHash; }
-    public void setDataHash(String dataHash) { this.dataHash = dataHash; }
+    public void setTimestamp(long timestamp) {
+        this.timestamp = timestamp;
+    }
 
-    public String getPrevHash() { return prevHash; }
-    public void setPrevHash(String prevHash) { this.prevHash = prevHash; }
+    public String getAction() {
+        return action;
+    }
 
-    public String getHash() { return hash; }
-    public void setHash(String hash) { this.hash = hash; }
+    public void setAction(String action) {
+        this.action = action;
+    }
+
+    public String getDataHash() {
+        return dataHash;
+    }
+
+    public void setDataHash(String dataHash) {
+        this.dataHash = dataHash;
+    }
+
+    public String getPrevHash() {
+        return prevHash;
+    }
+
+    public void setPrevHash(String prevHash) {
+        this.prevHash = prevHash;
+    }
+
+    public String getHash() {
+        return hash;
+    }
+
+    public void setHash(String hash) {
+        this.hash = hash;
+    }
 }

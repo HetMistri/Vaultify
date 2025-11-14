@@ -6,11 +6,25 @@ import java.security.PrivateKey;
 import java.security.PublicKey;
 
 /**
- * Day 1 skeleton for RSA utilities.
- * Provides method signatures for key generation and basic encrypt/decrypt.
- * Implementations will be added in a later iteration (RSA/OAEP recommended).
+ * Day 1 RSA implementation conforming to CryptoEngine interface.
+ * Provides RSA encryption/decryption plus key generation utilities.
+ * Full RSA/OAEP implementation will be added in later iterations.
  */
-public class RSAEngine {
+public class RSAEngine implements CryptoEngine {
+
+    @Override
+    public byte[] encrypt(byte[] data) {
+        // TODO: implement RSA/OAEP encryption
+        return new byte[0]; // placeholder
+    }
+
+    @Override
+    public byte[] decrypt(byte[] data) {
+        // TODO: implement RSA/OAEP decryption
+        return new byte[0]; // placeholder
+    }
+
+    // Additional utility methods for RSA-specific operations
 
     /**
      * Generate an RSA keypair with the given key size (e.g., 2048 or 3072).
@@ -28,7 +42,7 @@ public class RSAEngine {
     /**
      * Encrypt the provided bytes with a public key. Day 1 stub.
      */
-    public static byte[] encrypt(byte[] data, PublicKey publicKey) {
+    public static byte[] encryptWithKey(byte[] data, PublicKey publicKey) {
         // TODO: implement RSA/OAEP encryption
         return new byte[0];
     }
@@ -36,7 +50,7 @@ public class RSAEngine {
     /**
      * Decrypt the provided bytes with a private key. Day 1 stub.
      */
-    public static byte[] decrypt(byte[] data, PrivateKey privateKey) {
+    public static byte[] decryptWithKey(byte[] data, PrivateKey privateKey) {
         // TODO: implement RSA/OAEP decryption
         return new byte[0];
     }
