@@ -6,4 +6,12 @@ public class VerificationService {
     public VerificationService(LedgerService ledgerService) {
         this.ledgerService = ledgerService;
     }
+
+    public void generateShareToken() {
+        // TODO
+    }
+
+    public void verifyShareToken() {
+        // TODO
+    }
 }

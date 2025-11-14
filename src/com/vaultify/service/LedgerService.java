@@ -7,4 +7,12 @@ public class LedgerService {
     public LedgerService(LedgerEngine engine) {
         this.ledgerEngine = engine;
     }
+
+    public void appendBlock() {
+        // TODO
+    }
+
+    public void verifyIntegrity() {
+        // TODO
+    }
 }
