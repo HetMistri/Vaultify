@@ -1,4 +1,4 @@
 package com.vaultify.verifier;
 
-public class temp {
+public class CertificateParser {
 }

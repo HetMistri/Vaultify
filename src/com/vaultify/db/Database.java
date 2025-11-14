@@ -1,4 +1,4 @@
 package com.vaultify.db;
 
-public class temp {
+public class Database {
 }
