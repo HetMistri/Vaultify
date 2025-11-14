@@ -1,4 +1,4 @@
 package com.vaultify.crypto;
 
-public class RSAUtil {
+public class RSAEngine {
 }

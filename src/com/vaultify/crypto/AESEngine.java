@@ -1,4 +1,4 @@
 package com.vaultify.crypto;
 
-public class AESUtil {
+public class AESEngine {
 }
