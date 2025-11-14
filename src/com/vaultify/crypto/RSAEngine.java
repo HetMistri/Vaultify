@@ -2,6 +2,7 @@ package com.vaultify.crypto;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 
@@ -34,7 +35,7 @@ public class RSAEngine implements CryptoEngine {
             KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
             kpg.initialize(keySize);
             return kpg.generateKeyPair();
-        } catch (Exception e) {
+        } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException("Failed to generate RSA keypair", e);
         }
     }
