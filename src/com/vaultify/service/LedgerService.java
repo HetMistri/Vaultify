@@ -1,10 +1,31 @@
 package com.vaultify.service;
 
+import com.vaultify.ledger.LedgerBlock;
 import com.vaultify.ledger.LedgerEngine;
 
+import java.util.List;
+
+/**
+ * Small service facade around the LedgerEngine to make it easier for other
+ * services/CLI to interact with the ledger without depending on the engine
+ * implementation details.
+ */
 public class LedgerService {
-    private final LedgerEngine ledgerEngine;
-    public LedgerService(LedgerEngine engine) {
-        this.ledgerEngine = engine;
+    private final LedgerEngine engine;
+
+    public LedgerService() {
+        this.engine = new LedgerEngine();
+    }
+
+    public LedgerBlock appendBlock(String action, String dataHash) {
+        return engine.addBlock(action, dataHash);
+    }
+
+    public List<String> verifyIntegrity() {
+        return engine.verifyIntegrity();
+    }
+
+    public List<LedgerBlock> getChain() {
+        return engine.getChain();
     }
 }
