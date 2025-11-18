@@ -6,5 +6,6 @@ public class Database {
     public Database() {
         // Initialize database connection (Day -1: no real DB, just a placeholder)
         System.out.println("Database initialized (placeholder, no real DB connection)");
+        System.out.println("TEST!!");
     }
 }
