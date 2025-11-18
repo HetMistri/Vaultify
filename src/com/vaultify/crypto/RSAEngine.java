@@ -1,58 +1,52 @@
 package com.vaultify.crypto;
 
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
-import java.security.PublicKey;
+import java.security.*;
+import javax.crypto.Cipher;
+import java.security.spec.MGF1ParameterSpec;
+import javax.crypto.spec.OAEPParameterSpec;
+import javax.crypto.spec.PSource;
 
-/**
- * Day 1 RSA implementation conforming to CryptoEngine interface.
- * Provides RSA encryption/decryption plus key generation utilities.
- * Full RSA/OAEP implementation will be added in later iterations.
- */
 public class RSAEngine implements CryptoEngine {
 
     @Override
-    public byte[] encrypt(byte[] data) {
-        // TODO: implement RSA/OAEP encryption
-        return new byte[0]; // placeholder
+    public byte[] encrypt(byte[] data) throws Exception {
+        throw new UnsupportedOperationException("Use encryptWithKey(publicKey)");
     }
 
     @Override
-    public byte[] decrypt(byte[] data) {
-        // TODO: implement RSA/OAEP decryption
-        return new byte[0]; // placeholder
+    public byte[] decrypt(byte[] data) throws Exception {
+        throw new UnsupportedOperationException("Use decryptWithKey(privateKey)");
     }
 
-    // Additional utility methods for RSA-specific operations
-
-    /**
-     * Generate an RSA keypair with the given key size (e.g., 2048 or 3072).
-     */
     public static KeyPair generateKeyPair(int keySize) {
         try {
             KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
             kpg.initialize(keySize);
             return kpg.generateKeyPair();
         } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("Failed to generate RSA keypair", e);
+            throw new RuntimeException(e);
         }
     }
 
-    /**
-     * Encrypt the provided bytes with a public key. Day 1 stub.
-     */
-    public static byte[] encryptWithKey(byte[] data, PublicKey publicKey) {
-        // TODO: implement RSA/OAEP encryption
-        return new byte[0];
+    public static byte[] encryptWithKey(byte[] data, PublicKey publicKey) throws Exception {
+        Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
+        OAEPParameterSpec oaepParams = new OAEPParameterSpec(
+                "SHA-256",
+                "MGF1",
+                new MGF1ParameterSpec("SHA-256"),
+                PSource.PSpecified.DEFAULT);
+        cipher.init(Cipher.ENCRYPT_MODE, publicKey, oaepParams);
+        return cipher.doFinal(data);
     }
 
-    /**
-     * Decrypt the provided bytes with a private key. Day 1 stub.
-     */
-    public static byte[] decryptWithKey(byte[] data, PrivateKey privateKey) {
-        // TODO: implement RSA/OAEP decryption
-        return new byte[0];
+    public static byte[] decryptWithKey(byte[] data, PrivateKey privateKey) throws Exception {
+        Cipher cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding");
+        OAEPParameterSpec oaepParams = new OAEPParameterSpec(
+                "SHA-256",
+                "MGF1",
+                new MGF1ParameterSpec("SHA-256"),
+                PSource.PSpecified.DEFAULT);
+        cipher.init(Cipher.DECRYPT_MODE, privateKey, oaepParams);
+        return cipher.doFinal(data);
     }
 }
