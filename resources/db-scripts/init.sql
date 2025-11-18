@@ -1,21 +1,29 @@
--- Create database
-CREATE DATABASE vaultify_db;
+-- 1. Create the database
+CREATE DATABASE vaultify;
 
--- Switch into the correct DB
-\c vaultify_db;
+-- 2. Connect to the database (e.g., \c vaultify) and run the schema:
 
--- Create required tables (Dhruv will expand later)
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    username VARCHAR(50) NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL
+    username VARCHAR(100) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    public_key TEXT NOT NULL,
+    private_key_encrypted TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS credentials (
+CREATE TABLE credentials (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL,
-    name VARCHAR(100),
-    type VARCHAR(50),
-    file_path TEXT,
+    user_id INT REFERENCES users(id) ON DELETE CASCADE,
+    filename TEXT,
+    filepath TEXT UNIQUE NOT NULL,
+    metadata TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE tokens (
+    id SERIAL PRIMARY KEY,
+    credential_id INT REFERENCES credentials(id) ON DELETE CASCADE,
+    token TEXT UNIQUE NOT NULL,
+    expiry TIMESTAMP NOT NULL
 );
