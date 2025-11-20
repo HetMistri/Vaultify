@@ -1,10 +1,5 @@
 package com.vaultify.verifier;
 
-import com.vaultify.crypto.KeyManager;
-import com.vaultify.crypto.HashUtil;
-import com.vaultify.ledger.LedgerBlock;
-import com.vaultify.service.LedgerService;
-
 import java.nio.file.Path;
 import java.security.PublicKey;
 import java.security.Signature;
@@ -12,12 +7,17 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 
+import com.vaultify.crypto.KeyManager;
+import com.vaultify.ledger.LedgerBlock;
+import com.vaultify.service.LedgerService;
+
 public class CertificateVerifier {
 
     /**
      * Verify the certificate:
      * 1) Verify signature using issuer public key (PEM path)
-     * 2) Confirm ledger contains a block whose dataHash equals payloadHash and whose block.hash equals ledgerBlockHash
+     * 2) Confirm ledger contains a block whose dataHash equals payloadHash and
+     * whose block.hash equals ledgerBlockHash
      * 3) Check expiry
      *
      * Returns a Result object describing validity and reason.
@@ -61,6 +61,7 @@ public class CertificateVerifier {
     public static class Result {
         public final boolean valid;
         public final String message;
+
         public Result(boolean valid, String message) {
             this.valid = valid;
             this.message = message;
