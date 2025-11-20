@@ -1,9 +1,5 @@
 package com.vaultify.dao;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.vaultify.models.CredentialMetadata;
-
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -12,6 +8,10 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.vaultify.models.CredentialMetadata;
 
 public class FileCredentialDAO {
     private static final String CRED_DIR = "vault_data/db/credentials";
@@ -22,7 +22,7 @@ public class FileCredentialDAO {
         try {
             Files.createDirectories(Paths.get(CRED_DIR));
         } catch (IOException e) {
-            e.printStackTrace();
+            throw new RuntimeException("Failed to create credential directory", e);
         }
     }
 
@@ -38,7 +38,8 @@ public class FileCredentialDAO {
 
     public CredentialMetadata findById(String id) {
         File file = Paths.get(CRED_DIR, id + ".json").toFile();
-        if (!file.exists()) return null;
+        if (!file.exists())
+            return null;
 
         try (FileReader reader = new FileReader(file)) {
             return gson.fromJson(reader, CredentialMetadata.class);
@@ -55,9 +56,13 @@ public class FileCredentialDAO {
         if (files != null) {
             for (File f : files) {
                 try (FileReader reader = new FileReader(f)) {
-                    list.add(gson.fromJson(reader, CredentialMetadata.class));
+                    CredentialMetadata meta = gson.fromJson(reader, CredentialMetadata.class);
+                    if (meta != null) {
+                        list.add(meta);
+                    }
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    System.err
+                            .println("Warning: Failed to read credential file " + f.getName() + ": " + e.getMessage());
                 }
             }
         }

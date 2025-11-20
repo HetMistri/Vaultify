@@ -23,11 +23,6 @@ public class Config {
         }
     }
 
-    /** Convert db.host → DB_HOST */
-    private static String toEnvKey(String key) {
-        return key.toUpperCase().replace('.', '_');
-    }
-
     public static String get(String key) {
         String envKey = key.toUpperCase().replace('.', '_');
         String envValue = System.getenv(envKey);
@@ -39,7 +34,6 @@ public class Config {
         return props.getProperty(key);
     }
 
-
     public static String get(String key, String defaultValue) {
         String value = get(key);
         return (value == null || value.isEmpty()) ? defaultValue : value;
@@ -47,8 +41,9 @@ public class Config {
 
     public static int getInt(String key, int defaultValue) {
         try {
-            return Integer.parseInt(get(key));
-        } catch (Exception e) {
+            String value = get(key);
+            return value != null ? Integer.parseInt(value) : defaultValue;
+        } catch (NumberFormatException e) {
             return defaultValue;
         }
     }

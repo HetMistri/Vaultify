@@ -1,14 +1,5 @@
 package com.vaultify.service;
 
-import com.vaultify.crypto.KeyManager;
-import com.vaultify.crypto.RSAEngine;
-import com.vaultify.crypto.HashUtil;
-import com.vaultify.util.Config;
-import com.vaultify.util.TokenUtil;
-import com.vaultify.verifier.Certificate;
-import com.vaultify.verifier.CertificateParser;
-import com.vaultify.verifier.CertificateVerifier;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -17,10 +8,20 @@ import java.security.Signature;
 import java.time.Duration;
 import java.util.Base64;
 
+import com.vaultify.crypto.HashUtil;
+import com.vaultify.crypto.KeyManager;
+import com.vaultify.util.Config;
+import com.vaultify.util.TokenUtil;
+import com.vaultify.verifier.Certificate;
+import com.vaultify.verifier.CertificateParser;
+import com.vaultify.verifier.CertificateVerifier;
+
 /**
- * VerificationService - generates signed certificates for share tokens and verifies them.
+ * VerificationService - generates signed certificates for share tokens and
+ * verifies them.
  *
- * NOTE: This implementation expects the issuer's RSA private key to be stored as PKCS#8 PEM
+ * NOTE: This implementation expects the issuer's RSA private key to be stored
+ * as PKCS#8 PEM
  * at a path the caller provides (or can be derived from user record).
  */
 public class VerificationService {
@@ -45,7 +46,8 @@ public class VerificationService {
      *
      * Returns path to certificate file (and prints token).
      */
-    public Path generateShareToken(long issuerUserId, long credentialId, Path issuerPrivateKeyPath, int expiryHours) throws Exception {
+    public Path generateShareToken(long issuerUserId, long credentialId, Path issuerPrivateKeyPath, int expiryHours)
+            throws Exception {
         // create token
         String token = TokenUtil.generateToken();
         long now = System.currentTimeMillis();
@@ -64,17 +66,10 @@ public class VerificationService {
         byte[] signature = sig.sign();
         String signatureB64 = Base64.getEncoder().encodeToString(signature);
 
-        // append ledger block (synchronous)
+        // append ledger block (synchronous) and get block hash
         String action = "GENERATE_TOKEN";
-        com.vaultify.ledger.LedgerBlock block = ledgerService.getChain().isEmpty()
-                ? ledgerService.getChain().get(0) // should never happen
-                : ledgerService.getChain().get(ledgerService.getChain().size() - 1);
-
-        // ledgerService.appendBlock returns void in your code; call and then fetch last block
-        ledgerService.appendBlock(action, payloadHash);
-        // after append, fetch last block
-        com.vaultify.ledger.LedgerBlock last = ledgerService.getChain().get(ledgerService.getChain().size() - 1);
-        String ledgerHash = last.getHash();
+        com.vaultify.ledger.LedgerBlock ledgerBlock = ledgerService.appendBlock(action, payloadHash);
+        String ledgerHash = ledgerBlock.getHash();
 
         // Build certificate object
         Certificate cert = new Certificate();
