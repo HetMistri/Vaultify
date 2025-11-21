@@ -3,8 +3,7 @@ CREATE DATABASE vaultify;
 
 -- 2. Connect to the database (e.g., \c vaultify) and run the schema:
 
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
+CREATE TABLE users (    id SERIAL PRIMARY KEY,
     username VARCHAR(100) UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     public_key TEXT NOT NULL,

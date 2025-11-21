@@ -10,7 +10,7 @@ public class Database {
     // Get settings from your Config.java (which checks env vars first)
     private static final String URL = Config.get("db.url", "jdbc:postgresql://localhost:5432/vaultify");
     private static final String USER = Config.get("db.user", "postgres");
-    private static final String PASSWORD = Config.get("db.password", "password");
+    private static final String PASSWORD = Config.get("db.password", "admin");
 
     /**
      * Provides a connection to the database.
