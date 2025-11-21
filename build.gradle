@@ -65,6 +65,13 @@ tasks.register('testDb', JavaExec) {
     mainClass = 'com.vaultify.db.Database'
 }
 
+tasks.register('testAuth', JavaExec) {
+    group = "vaultify"
+    description = "Test authentication (login/signup)"
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.vaultify.test.AuthTest'
+}
+
 tasks.register('rebuild') {
     group = "vaultify"
     description = "Clean and build the entire project"

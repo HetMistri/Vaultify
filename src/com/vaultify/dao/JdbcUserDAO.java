@@ -1,62 +1,57 @@
 package com.vaultify.dao;
 
 import com.vaultify.db.Database;
-import com.vaultify.models.User; // You must create this model class
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import com.vaultify.models.User;
+import java.sql.*;
 
-public class UserDAO {
+public class JdbcUserDAO {
 
-    /**
-     * Implements saveUser skeleton [cite: 220]
-     */
-    public void saveUser(User user) {
-        String sql = "INSERT INTO users (username, password_hash, public_key, private_key_encrypted) VALUES (?, ?, ?, ?)";
-
+    public void save(User user) {
+        String sql = "INSERT INTO users (username, password_hash, public_key, private_key_encrypted, created_at) VALUES (?, ?, ?, ?, ?)";
         try (Connection conn = Database.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+             PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
             pstmt.setString(1, user.getUsername());
             pstmt.setString(2, user.getPasswordHash());
             pstmt.setString(3, user.getPublicKey());
             pstmt.setString(4, user.getPrivateKeyEncrypted());
+            pstmt.setTimestamp(5, user.getCreatedAt());
 
             pstmt.executeUpdate();
 
+            // Optional: Retrieve generated ID and set it back to user object
+            try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
+                if (generatedKeys.next()) {
+                    user.setId(generatedKeys.getLong(1));
+                }
+            }
+
         } catch (SQLException e) {
-            throw new RuntimeException("Error saving user", e);
+            throw new RuntimeException("Error saving user to DB", e);
         }
     }
 
-    /**
-     * Implements findUserByUsername skeleton [cite: 221]
-     */
-    public User findUserByUsername(String username) {
+    public User findByUsername(String username) {
         String sql = "SELECT * FROM users WHERE username = ?";
-        User user = null;
-
         try (Connection conn = Database.getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
 
             pstmt.setString(1, username);
-
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
-                    user = new User();
+                    User user = new User();
                     user.setId(rs.getLong("id"));
                     user.setUsername(rs.getString("username"));
                     user.setPasswordHash(rs.getString("password_hash"));
                     user.setPublicKey(rs.getString("public_key"));
                     user.setPrivateKeyEncrypted(rs.getString("private_key_encrypted"));
                     user.setCreatedAt(rs.getTimestamp("created_at"));
+                    return user;
                 }
             }
-
         } catch (SQLException e) {
-            throw new RuntimeException("Error finding user by username", e);
+            e.printStackTrace();
         }
-        return user;
+        return null; // Not found
     }
 }

@@ -1,21 +1,69 @@
 package com.vaultify.service;
 
+import com.vaultify.dao.FileUserDAO;
+import com.vaultify.models.User;
+
 /**
- * Lightweight UserService skeleton (Day -1 implementation).
- * Real persistence/auth will be added later (Day 3–4).
+ * UserService handles user management operations.
+ * Delegates to AuthService for authentication, provides user lookup and
+ * listing.
  */
 public class UserService {
+    private final FileUserDAO userDAO;
+    private final AuthService authService;
 
     public UserService() {
+        this.userDAO = new FileUserDAO();
+        this.authService = new AuthService();
     }
 
-    public void registerUser() {
-        // Day -1: placeholder implementation to keep the service usable
-        System.out.println("UserService.registerUser(): not implemented yet (Day 3-4)");
+    /**
+     * Register a new user.
+     * 
+     * @param username Username
+     * @param password Password
+     * @return User object if successful, null if username exists
+     */
+    public User registerUser(String username, String password) {
+        return authService.register(username, password);
     }
 
-    public void loginUser() {
-        // Day -1: placeholder implementation
-        System.out.println("UserService.loginUser(): not implemented yet");
+    /**
+     * Login user.
+     * 
+     * @param username Username
+     * @param password Password
+     * @return true if successful
+     */
+    public boolean loginUser(String username, String password) {
+        return authService.login(username, password);
+    }
+
+    /**
+     * Find user by username.
+     */
+    public User findByUsername(String username) {
+        return userDAO.findByUsername(username);
+    }
+
+    /**
+     * Get current logged-in user.
+     */
+    public User getCurrentUser() {
+        return authService.getCurrentUser();
+    }
+
+    /**
+     * Check if user is logged in.
+     */
+    public boolean isLoggedIn() {
+        return authService.isLoggedIn();
+    }
+
+    /**
+     * Logout current user.
+     */
+    public void logout() {
+        authService.logout();
     }
 }

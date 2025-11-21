@@ -1,32 +1,23 @@
 package com.vaultify.cli;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HashMap;
-import java.util.Map;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Scanner;
+
+import com.vaultify.models.User;
+import com.vaultify.service.AuthService;
+import com.vaultify.service.VerificationService;
+import com.vaultify.verifier.CertificateVerifier;
 
 /**
  * CommandRouter for Vaultify CLI.
- *
- * - public void start()   <-- used by VaultifyApplication
- * - public static handle(String, Scanner) <-- can be reused elsewhere
- *
- * This is a Day-1 demo implementation:
- * - in-memory user store (username -> sha256(password))
- * - in-memory credential store (id -> name)
- *
- * Replace with real services/DAO when available.
+ * Handles user commands with real authentication and session management.
  */
 public class CommandRouter {
 
-    // In-memory user store for quick Day-1 use (username -> sha256(password))
-    private static final Map<String, String> users = new HashMap<>();
-
-    // In-memory credential store for Day-1 demo: id -> credentialName
-    private static final Map<String, String> credentials = new HashMap<>();
-    private static int credentialCounter = 0;
+    // Services
+    private static final AuthService authService = new AuthService();
+    private static final VerificationService verificationService = new VerificationService();
 
     // -------------------------
     // Instance entrypoint used by VaultifyApplication
@@ -36,7 +27,8 @@ public class CommandRouter {
             while (true) {
                 System.out.print("vaultify> ");
                 String command = scanner.nextLine().trim();
-                if (command.isEmpty()) continue;
+                if (command.isEmpty())
+                    continue;
                 handle(command, scanner);
             }
         }
@@ -49,9 +41,14 @@ public class CommandRouter {
         switch (command) {
             case "register" -> register(scanner);
             case "login" -> login(scanner);
+            case "logout" -> logout();
+            case "whoami" -> whoami();
             case "vault" -> vault(scanner);
             case "verify" -> verifyToken(scanner);
             case "verify-ledger" -> verifyLedger();
+            case "share" -> share(scanner);
+            case "verify-cert" -> verifyCertificate(scanner);
+            case "test-db" -> testDatabaseConnection();
             case "help" -> printHelp();
             case "exit" -> {
                 System.out.println("Exiting Vaultify CLI...");
@@ -72,52 +69,96 @@ public class CommandRouter {
             return;
         }
 
-        if (users.containsKey(username)) {
-            System.out.println("Username already exists.");
+        System.out.print("Enter password: ");
+        String password = scanner.nextLine();
+        if (password.isEmpty()) {
+            System.out.println("Password cannot be empty.");
             return;
         }
 
-        System.out.print("Enter password: ");
-        String password = scanner.nextLine();
+        System.out.print("Confirm password: ");
+        String confirmPassword = scanner.nextLine();
+        if (!password.equals(confirmPassword)) {
+            System.out.println("Passwords do not match.");
+            return;
+        }
 
-        String hashed = sha256(password);
-        users.put(username, hashed);
-        System.out.println("User '" + username + "' registered successfully.");
+        try {
+            User user = authService.register(username, password);
+            if (user == null) {
+                System.out.println("Username already exists.");
+                return;
+            }
+            System.out.println("User '" + username + "' registered successfully.");
+            System.out.println("RSA key pair generated and private key encrypted.");
+        } catch (Exception e) {
+            System.out.println("Registration failed: " + e.getMessage());
+        }
     }
 
     // ---------------------------
     // login
     // ---------------------------
     private static void login(Scanner scanner) {
+        if (authService.isLoggedIn()) {
+            System.out.println("Already logged in as: " + authService.getCurrentUser().getUsername());
+            return;
+        }
+
         System.out.print("Username: ");
         String username = scanner.nextLine().trim();
 
         System.out.print("Password: ");
         String password = scanner.nextLine();
 
-        String stored = users.get(username);
-        if (stored == null) {
-            System.out.println("Invalid credentials.");
-            return;
-        }
-
-        String hashed = sha256(password);
-        if (stored.equals(hashed)) {
-            System.out.println("Login successful.");
+        boolean success = authService.login(username, password);
+        if (success) {
+            System.out.println("Login successful. Welcome, " + username + "!");
         } else {
             System.out.println("Invalid credentials.");
         }
     }
 
     // ---------------------------
+    // logout
+    // ---------------------------
+    private static void logout() {
+        if (!authService.isLoggedIn()) {
+            System.out.println("No user is currently logged in.");
+            return;
+        }
+        String username = authService.getCurrentUser().getUsername();
+        authService.logout();
+        System.out.println("User '" + username + "' logged out successfully.");
+    }
+
+    // ---------------------------
+    // whoami
+    // ---------------------------
+    private static void whoami() {
+        if (!authService.isLoggedIn()) {
+            System.out.println("No user is currently logged in.");
+            return;
+        }
+        User user = authService.getCurrentUser();
+        System.out.println("Logged in as: " + user.getUsername());
+        System.out.println("User ID: " + user.getId());
+    }
+
+    // ---------------------------
     // Vault submenu
     // ---------------------------
     private static void vault(Scanner scanner) {
+        if (!authService.isLoggedIn()) {
+            System.out.println("Please login first to access vault.");
+            return;
+        }
         System.out.println("Entering Vault subsystem. Type 'help' for vault commands, 'back' to return.");
         while (true) {
             System.out.print("vaultify:vault> ");
             String line = scanner.nextLine().trim();
-            if (line.isEmpty()) continue;
+            if (line.isEmpty())
+                continue;
 
             String[] parts = line.split("\\s+", 2);
             String cmd = parts[0].toLowerCase();
@@ -173,19 +214,14 @@ public class CommandRouter {
             System.out.println("Credential name cannot be empty.");
             return;
         }
-        credentialCounter++;
-        String id = String.valueOf(credentialCounter);
-        credentials.put(id, name);
-        System.out.println("Credential added with id: " + id);
+        // TODO: Integrate with VaultService when vault commands are fully wired
+        System.out.println("Credential vault operations will be integrated with VaultService.");
+        System.out.println("VaultService is ready - CLI wiring pending.");
     }
 
     private static void listCredentials() {
-        if (credentials.isEmpty()) {
-            System.out.println("No credentials stored.");
-            return;
-        }
-        System.out.println("Stored credentials:");
-        credentials.forEach((id, name) -> System.out.println("  " + id + "  " + name));
+        // TODO: Integrate with VaultService
+        System.out.println("Credential listing will be integrated with VaultService.");
     }
 
     private static void viewCredential(String id) {
@@ -193,13 +229,8 @@ public class CommandRouter {
             System.out.println("Invalid credential id.");
             return;
         }
-        String name = credentials.get(id);
-        if (name == null) {
-            System.out.println("Credential not found for id: " + id);
-        } else {
-            // In the real project this would decrypt/read the file; here we print the demo name.
-            System.out.println("Credential [" + id + "]: " + name);
-        }
+        // TODO: Integrate with VaultService
+        System.out.println("Credential retrieval will be integrated with VaultService.");
     }
 
     private static void deleteCredential(String id) {
@@ -207,11 +238,8 @@ public class CommandRouter {
             System.out.println("Invalid credential id.");
             return;
         }
-        if (credentials.remove(id) != null) {
-            System.out.println("Credential " + id + " deleted.");
-        } else {
-            System.out.println("Credential not found: " + id);
-        }
+        // TODO: Integrate with VaultService
+        System.out.println("Credential deletion will be integrated with VaultService.");
     }
 
     // ---------------------------
@@ -236,32 +264,161 @@ public class CommandRouter {
     }
 
     // ---------------------------
-    // help
+    // share
     // ---------------------------
-    private static void printHelp() {
-        System.out.println("Available commands:");
-        System.out.println("  register       - create a new user");
-        System.out.println("  login          - login with username/password");
-        System.out.println("  vault          - vault operations (add/list/view/delete)");
-        System.out.println("  verify         - verify shared token (placeholder)");
-        System.out.println("  verify-ledger  - verify ledger (placeholder)");
-        System.out.println("  help           - show this help");
-        System.out.println("  exit           - quit CLI");
+    private static void share(Scanner scanner) {
+        try {
+            System.out.print("Enter issuer user ID: ");
+            String userIdStr = scanner.nextLine().trim();
+            long userId = Long.parseLong(userIdStr);
+
+            System.out.print("Enter credential ID: ");
+            String credentialIdStr = scanner.nextLine().trim();
+            long credentialId = Long.parseLong(credentialIdStr);
+
+            System.out.print("Enter issuer PRIVATE key path: ");
+            String privPath = scanner.nextLine().trim();
+
+            System.out.print("Expiry in hours (default 48): ");
+            String exp = scanner.nextLine().trim();
+            int expiryHours = exp.isEmpty() ? 48 : Integer.parseInt(exp);
+
+            Path privateKeyPath = Paths.get(privPath);
+
+            Path certPath = verificationService.generateShareToken(
+                    userId,
+                    credentialId,
+                    privateKeyPath,
+                    expiryHours);
+
+            System.out.println("Certificate generated at:");
+            System.out.println(certPath.toAbsolutePath());
+
+        } catch (NumberFormatException nfe) {
+            System.out.println("Invalid numeric input. Please enter numeric user ID and credential ID.");
+        } catch (Exception e) {
+            System.out.println("Error generating share token: " + e.getMessage());
+        }
     }
 
     // ---------------------------
-    // small SHA-256 helper
+    // verify certificate
     // ---------------------------
-    private static String sha256(String input) {
-        if (input == null) input = "";
+    private static void verifyCertificate(Scanner scanner) {
         try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] digest = md.digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : digest) sb.append(String.format("%02x", b));
-            return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
+            System.out.print("Enter certificate path: ");
+            Path certPath = Paths.get(scanner.nextLine().trim());
+
+            System.out.print("Enter issuer PUBLIC key path: ");
+            Path pubPath = Paths.get(scanner.nextLine().trim());
+
+            CertificateVerifier.Result res = verificationService.verifyCertificate(certPath, pubPath);
+
+            System.out.println("\n=== Verification Result ===");
+            System.out.println("Valid: " + res.valid);
+            System.out.println("Message: " + res.message);
+            System.out.println("===========================");
+
+        } catch (Exception e) {
+            System.out.println("Error verifying certificate: " + e.getMessage());
         }
+    }
+
+    // ---------------------------
+    // test database connection
+    // ---------------------------
+    private static void testDatabaseConnection() {
+        System.out.println("\n=== Database Connection Test ===");
+
+        try (java.sql.Connection conn = com.vaultify.db.Database.getConnection()) {
+            System.out.println("✓ Connection successful!");
+            System.out.println("  URL: " + conn.getMetaData().getURL());
+            System.out.println("  Database: " + conn.getCatalog());
+            System.out.println("  User: " + conn.getMetaData().getUserName());
+
+            // List all tables in the database
+            System.out.println("\n=== Available Tables ===");
+            try (java.sql.ResultSet rs = conn.getMetaData().getTables(null, "public", "%", new String[] { "TABLE" })) {
+                boolean foundTables = false;
+                while (rs.next()) {
+                    String tableName = rs.getString("TABLE_NAME");
+                    System.out.println("  • " + tableName);
+                    foundTables = true;
+                }
+                if (!foundTables) {
+                    System.out.println("  ⚠ No tables found! init.sql did not execute.");
+                    System.out.println("\n  Fix: docker compose down -v && docker compose up");
+                }
+            }
+
+            // Describe each expected table and validate schema
+            System.out.println("\n=== Table Schemas ===");
+            String[] expectedTables = { "users", "credentials", "tokens" };
+            boolean schemaValid = true;
+
+            for (String table : expectedTables) {
+                try (java.sql.ResultSet rs = conn.getMetaData().getColumns(null, "public", table, null)) {
+                    if (!rs.isBeforeFirst()) {
+                        System.out.println("\n✗ Table '" + table + "' does NOT exist");
+                        schemaValid = false;
+                        continue;
+                    }
+
+                    System.out.println("\n✓ Table: " + table);
+                    int colCount = 0;
+                    while (rs.next()) {
+                        String colName = rs.getString("COLUMN_NAME");
+                        String colType = rs.getString("TYPE_NAME");
+                        int colSize = rs.getInt("COLUMN_SIZE");
+                        String nullable = rs.getString("IS_NULLABLE").equals("YES") ? "NULL" : "NOT NULL";
+                        System.out.println("    - " + colName + " (" + colType +
+                                (colSize > 0 ? "(" + colSize + ")" : "") + ") " + nullable);
+                        colCount++;
+                    }
+
+                    // Validate users table has crypto fields
+                    if (table.equals("users") && colCount < 6) {
+                        System.out.println(
+                                "    ⚠ WARNING: users table has old schema (missing public_key, private_key_encrypted)");
+                        schemaValid = false;
+                    }
+                }
+            }
+
+            if (!schemaValid) {
+                System.out.println("\n⚠ SCHEMA MISMATCH DETECTED!");
+                System.out.println("\nThe database was initialized with an old schema.");
+                System.out.println("You MUST recreate the database volume:\n");
+                System.out.println("  1. Exit this container (Ctrl+C)");
+                System.out.println("  2. Run: docker compose down -v");
+                System.out.println("  3. Run: docker compose up\n");
+                System.out.println("The -v flag is CRITICAL - it removes the old database volume.");
+            } else {
+                System.out.println("\n✓ All schemas valid!");
+            }
+
+        } catch (java.sql.SQLException e) {
+            System.out.println("✗ Connection failed!");
+            System.out.println("  Error: " + e.getMessage());
+        }
+        System.out.println("================================\n");
+    } // ---------------------------
+      // help
+      // ---------------------------
+
+    private static void printHelp() {
+        System.out.println("Available commands:");
+        System.out.println("  register       - create a new user with RSA key pair");
+        System.out.println("  login          - login with username/password");
+        System.out.println("  logout         - logout current user");
+        System.out.println("  whoami         - show current logged-in user");
+        System.out.println("  vault          - vault operations (add/list/view/delete)");
+        System.out.println("  share          - generate a share token + signed certificate");
+        System.out.println("  verify         - verify shared token (placeholder)");
+        System.out.println("  verify-ledger  - verify ledger (placeholder)");
+        System.out.println("  verify-cert    - verify a certificate file");
+        System.out.println("  test-db        - test database connection and query");
+        System.out.println("  help           - show this help");
+        System.out.println("  exit           - quit CLI");
     }
 }
