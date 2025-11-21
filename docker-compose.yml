@@ -34,6 +34,10 @@ services:
     stdin_open: true          # REQUIRED for interactive CLI
     tty: true                 # REQUIRED for prompt display
     command: ["/bin/sh", "-c", "java -jar /app/app.jar"]
+    environment:
+      DB_URL: jdbc:postgresql://db:5432/vaultify_db
+      DB_USER: ${POSTGRES_USER:-vaultify_user}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret123}
     volumes:
       - ./vault_data:/app/vault_data
 volumes:

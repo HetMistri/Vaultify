@@ -48,6 +48,7 @@ public class CommandRouter {
             case "verify-ledger" -> verifyLedger();
             case "share" -> share(scanner);
             case "verify-cert" -> verifyCertificate(scanner);
+            case "test-db" -> testDatabaseConnection();
             case "help" -> printHelp();
             case "exit" -> {
                 System.out.println("Exiting Vaultify CLI...");
@@ -324,8 +325,87 @@ public class CommandRouter {
     }
 
     // ---------------------------
-    // help
+    // test database connection
     // ---------------------------
+    private static void testDatabaseConnection() {
+        System.out.println("\n=== Database Connection Test ===");
+
+        try (java.sql.Connection conn = com.vaultify.db.Database.getConnection()) {
+            System.out.println("✓ Connection successful!");
+            System.out.println("  URL: " + conn.getMetaData().getURL());
+            System.out.println("  Database: " + conn.getCatalog());
+            System.out.println("  User: " + conn.getMetaData().getUserName());
+
+            // List all tables in the database
+            System.out.println("\n=== Available Tables ===");
+            try (java.sql.ResultSet rs = conn.getMetaData().getTables(null, "public", "%", new String[] { "TABLE" })) {
+                boolean foundTables = false;
+                while (rs.next()) {
+                    String tableName = rs.getString("TABLE_NAME");
+                    System.out.println("  • " + tableName);
+                    foundTables = true;
+                }
+                if (!foundTables) {
+                    System.out.println("  ⚠ No tables found! init.sql did not execute.");
+                    System.out.println("\n  Fix: docker compose down -v && docker compose up");
+                }
+            }
+
+            // Describe each expected table and validate schema
+            System.out.println("\n=== Table Schemas ===");
+            String[] expectedTables = { "users", "credentials", "tokens" };
+            boolean schemaValid = true;
+
+            for (String table : expectedTables) {
+                try (java.sql.ResultSet rs = conn.getMetaData().getColumns(null, "public", table, null)) {
+                    if (!rs.isBeforeFirst()) {
+                        System.out.println("\n✗ Table '" + table + "' does NOT exist");
+                        schemaValid = false;
+                        continue;
+                    }
+
+                    System.out.println("\n✓ Table: " + table);
+                    int colCount = 0;
+                    while (rs.next()) {
+                        String colName = rs.getString("COLUMN_NAME");
+                        String colType = rs.getString("TYPE_NAME");
+                        int colSize = rs.getInt("COLUMN_SIZE");
+                        String nullable = rs.getString("IS_NULLABLE").equals("YES") ? "NULL" : "NOT NULL";
+                        System.out.println("    - " + colName + " (" + colType +
+                                (colSize > 0 ? "(" + colSize + ")" : "") + ") " + nullable);
+                        colCount++;
+                    }
+
+                    // Validate users table has crypto fields
+                    if (table.equals("users") && colCount < 6) {
+                        System.out.println(
+                                "    ⚠ WARNING: users table has old schema (missing public_key, private_key_encrypted)");
+                        schemaValid = false;
+                    }
+                }
+            }
+
+            if (!schemaValid) {
+                System.out.println("\n⚠ SCHEMA MISMATCH DETECTED!");
+                System.out.println("\nThe database was initialized with an old schema.");
+                System.out.println("You MUST recreate the database volume:\n");
+                System.out.println("  1. Exit this container (Ctrl+C)");
+                System.out.println("  2. Run: docker compose down -v");
+                System.out.println("  3. Run: docker compose up\n");
+                System.out.println("The -v flag is CRITICAL - it removes the old database volume.");
+            } else {
+                System.out.println("\n✓ All schemas valid!");
+            }
+
+        } catch (java.sql.SQLException e) {
+            System.out.println("✗ Connection failed!");
+            System.out.println("  Error: " + e.getMessage());
+        }
+        System.out.println("================================\n");
+    } // ---------------------------
+      // help
+      // ---------------------------
+
     private static void printHelp() {
         System.out.println("Available commands:");
         System.out.println("  register       - create a new user with RSA key pair");
@@ -337,6 +417,7 @@ public class CommandRouter {
         System.out.println("  verify         - verify shared token (placeholder)");
         System.out.println("  verify-ledger  - verify ledger (placeholder)");
         System.out.println("  verify-cert    - verify a certificate file");
+        System.out.println("  test-db        - test database connection and query");
         System.out.println("  help           - show this help");
         System.out.println("  exit           - quit CLI");
     }
