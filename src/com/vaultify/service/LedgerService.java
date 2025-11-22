@@ -1,31 +1,59 @@
 package com.vaultify.service;
 
+import java.util.ArrayList;
 import java.util.List;
 
-import com.vaultify.ledger.LedgerBlock;
-import com.vaultify.ledger.LedgerEngine;
+import com.vaultify.client.LedgerClient;
+import com.vaultify.models.LedgerBlock;
 
 /**
- * Small service facade around the LedgerEngine to make it easier for other
- * services/CLI to interact with the ledger without depending on the engine
- * implementation details.
+ * Service facade for remote ledger operations.
+ * All ledger operations go through the external ledger-server.
  */
 public class LedgerService {
-    private final LedgerEngine engine;
 
     public LedgerService() {
-        this.engine = new LedgerEngine();
+        // Check server availability on startup
+        if (!LedgerClient.isServerAvailable()) {
+            System.err.println("⚠ WARNING: Ledger server is not available!");
+            System.err.println("  Please start the ledger server: cd ledger-server && npm start");
+        }
     }
 
     public LedgerBlock appendBlock(String action, String dataHash) {
-        return engine.addBlock(action, dataHash);
+        return appendBlock(0L, "system", action, dataHash, null, null);
+    }
+
+    public LedgerBlock appendBlock(long userId, String username, String action, String dataHash) {
+        return appendBlock(userId, username, action, dataHash, null, null);
+    }
+
+    public LedgerBlock appendBlock(long userId, String username, String action, String dataHash,
+            String credentialId, String token) {
+        return LedgerClient.appendBlock(userId, username, action, dataHash, credentialId, token);
     }
 
     public List<String> verifyIntegrity() {
-        return engine.verifyIntegrity();
+        boolean valid = LedgerClient.verifyLedgerIntegrity();
+        List<String> result = new ArrayList<>();
+        if (valid) {
+            result.add("✓ Ledger integrity verified");
+        } else {
+            result.add("✗ Ledger integrity check failed");
+        }
+        return result;
     }
 
     public List<LedgerBlock> getChain() {
-        return engine.getChain();
+        return LedgerClient.getAllBlocks();
+    }
+
+    public LedgerBlock getLatestBlock() {
+        List<LedgerBlock> chain = getChain();
+        return chain.isEmpty() ? null : chain.get(chain.size() - 1);
+    }
+
+    public LedgerBlock findBlockByHash(String hash) {
+        return LedgerClient.getBlockByHash(hash);
     }
 }

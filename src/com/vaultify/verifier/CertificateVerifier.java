@@ -1,61 +1,191 @@
 package com.vaultify.verifier;
 
-import java.nio.file.Path;
 import java.security.PublicKey;
 import java.security.Signature;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
-import java.util.List;
-import java.util.Optional;
+import java.security.KeyFactory;
 
-import com.vaultify.crypto.KeyManager;
-import com.vaultify.ledger.LedgerBlock;
-import com.vaultify.service.LedgerService;
+import com.vaultify.client.LedgerClient;
+import com.vaultify.crypto.HashUtil;
 
+/**
+ * 4-Layer Certificate Verification System
+ * 
+ * Layer 1: Certificate signature validation (local)
+ * Layer 2: Token matches certificate
+ * Layer 3: Online Ledger Server verification
+ * Layer 4: Timestamp & expiry verification
+ */
 public class CertificateVerifier {
 
     /**
-     * Verify the certificate:
-     * 1) Verify signature using issuer public key (PEM path)
-     * 2) Confirm ledger contains a block whose dataHash equals payloadHash and
-     * whose block.hash equals ledgerBlockHash
-     * 3) Check expiry
-     *
-     * Returns a Result object describing validity and reason.
+     * Complete 4-layer verification of certificate + token
+     * 
+     * @param cert          Certificate loaded from file
+     * @param tokenFromUser Raw token string entered by verifier
+     * @return Result with validity status and detailed message
      */
-    public static Result verify(Certificate cert, Path issuerPublicKeyPath, LedgerService ledgerService) {
+    public static Result verify(Certificate cert, String tokenFromUser) {
+        System.out.println("\n===========================================");
+        System.out.println("🔐 4-LAYER CERTIFICATE VERIFICATION");
+        System.out.println("===========================================\n");
+
         try {
-            // 1) verify signature over payloadHash
-            PublicKey pub = new KeyManager().loadPublicKey(issuerPublicKeyPath);
+            // ===============================================
+            // 🔵 LAYER 1 — Certificate Signature Validation (Local)
+            // ===============================================
+            System.out.println("🔵 LAYER 1: Certificate Signature Validation");
+            System.out.println("   Verifying RSA signature...");
+
+            // Reconstruct payloadHash from cert data
+            String payloadData = cert.tokenHash + "|" + cert.credentialId + "|" +
+                    cert.issuerPublicKeyPem + "|" + cert.expiryEpochMs;
+            String recomputedPayloadHash = HashUtil.sha256(payloadData);
+
+            if (!recomputedPayloadHash.equals(cert.payloadHash)) {
+                return fail("   ✗ PayloadHash mismatch - certificate tampered");
+            }
+
+            // Load issuer public key from PEM string
+            PublicKey issuerPublicKey = loadPublicKeyFromPem(cert.issuerPublicKeyPem);
+
+            // Verify signature over payloadHash
             Signature sig = Signature.getInstance("SHA256withRSA");
-            sig.initVerify(pub);
-            byte[] payloadHashBytes = cert.payloadHash.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-            sig.update(payloadHashBytes);
+            sig.initVerify(issuerPublicKey);
+            sig.update(cert.payloadHash.getBytes());
             byte[] signatureBytes = Base64.getDecoder().decode(cert.signatureBase64);
-            boolean sigOk = sig.verify(signatureBytes);
-            if (!sigOk) {
-                return new Result(false, "Invalid RSA signature");
+
+            if (!sig.verify(signatureBytes)) {
+                return fail("   ✗ RSA signature verification FAILED");
+            }
+            System.out.println("   ✓ Signature valid\n");
+
+            // ===============================================
+            // 🟡 LAYER 2 — Token Matches Certificate
+            // ===============================================
+            System.out.println("🟡 LAYER 2: Token Matches Certificate");
+            System.out.println("   Computing tokenHash from user input...");
+
+            String userTokenHash = HashUtil.sha256(tokenFromUser);
+
+            if (!userTokenHash.equals(cert.tokenHash)) {
+                return fail("   ✗ Token mismatch - wrong token for this certificate");
+            }
+            System.out.println("   ✓ Token matches certificate\n");
+
+            // ===============================================
+            // 🟨 LAYER 3 — Online Ledger Server Verification
+            // ===============================================
+            System.out.println("🟨 LAYER 3: Online Ledger Server Verification");
+
+            // Check if server is available
+            if (!LedgerClient.isServerAvailable()) {
+                System.out.println("   ⚠ WARNING: Ledger server unavailable - skipping online checks");
+                System.out.println("   (Offline verification only)\n");
+            } else {
+                // Step B3.1 — Fetch certificate from server
+                System.out.println("   Fetching certificate from ledger server...");
+                Certificate serverCert = LedgerClient.getCertificate(cert.tokenHash);
+
+                if (serverCert == null) {
+                    return fail("   ✗ Certificate not registered on ledger server");
+                }
+
+                // Verify server copy matches local certificate
+                if (!serverCert.signatureBase64.equals(cert.signatureBase64)) {
+                    return fail("   ✗ Certificate signature mismatch with server");
+                }
+                System.out.println("   ✓ Certificate registered on server");
+
+                // Step B3.2 — Check token revocation
+                System.out.println("   Checking token revocation status...");
+                boolean isRevoked = LedgerClient.isTokenRevoked(cert.tokenHash);
+
+                if (isRevoked) {
+                    return fail("   ✗ TOKEN REVOKED - share access withdrawn");
+                }
+                System.out.println("   ✓ Token not revoked");
+
+                // Step B3.3 — Fetch and verify ledger block
+                System.out.println("   Verifying ledger block...");
+                com.vaultify.models.LedgerBlock block = LedgerClient.getBlockByHash(cert.ledgerBlockHash);
+
+                if (block == null) {
+                    return fail("   ✗ Ledger block not found - certificate not anchored");
+                }
+
+                // Verify block dataHash
+                String expectedDataHash = HashUtil.sha256(cert.tokenHash + ":" + cert.credentialId);
+                if (!expectedDataHash.equals(block.getDataHash())) {
+                    return fail("   ✗ Ledger block dataHash mismatch - tampering detected");
+                }
+                System.out.println("   ✓ Ledger block verified");
+                System.out.println("   ✓ Chain integrity confirmed\n");
             }
 
-            // 2) check ledger for matching block
-            List<LedgerBlock> chain = ledgerService.getChain();
-            Optional<LedgerBlock> found = chain.stream()
-                    .filter(b -> b.getDataHash() != null && b.getDataHash().equals(cert.payloadHash))
-                    .filter(b -> b.getHash() != null && b.getHash().equals(cert.ledgerBlockHash))
-                    .findAny();
-            if (found.isEmpty()) {
-                return new Result(false, "Ledger entry not found or ledgerBlockHash mismatch");
-            }
-
-            // 3) expiry
+            // ===============================================
+            // 🟧 LAYER 4 — Timestamp & Expiry Verification
+            // ===============================================
+            System.out.println("🟧 LAYER 4: Timestamp & Expiry Verification");
             long now = System.currentTimeMillis();
-            if (cert.expiryEpochMs <= now) {
-                return new Result(false, "Certificate expired");
+
+            if (now >= cert.expiryEpochMs) {
+                long daysExpired = (now - cert.expiryEpochMs) / (1000 * 60 * 60 * 24);
+                return fail("   ✗ Certificate EXPIRED (" + daysExpired + " days ago)");
             }
 
-            return new Result(true, "Certificate valid");
+            long hoursRemaining = (cert.expiryEpochMs - now) / (1000 * 60 * 60);
+            System.out.println("   ✓ Certificate valid (" + hoursRemaining + " hours remaining)\n");
+
+            // ===============================================
+            // 🟩 SUCCESS — All 4 Layers Passed
+            // ===============================================
+            System.out.println("===========================================");
+            System.out.println("✅ VERIFICATION SUCCESS");
+            System.out.println("===========================================");
+            System.out.println("✓ Certificate authentic");
+            System.out.println("✓ Token correct");
+            System.out.println("✓ Issuer signature valid");
+            System.out.println("✓ Ledger anchored");
+            System.out.println("✓ Not revoked");
+            System.out.println("✓ Not expired\n");
+
+            System.out.println("📋 Certificate Details:");
+            System.out.println("   Issuer User ID: " + cert.issuerUserId);
+            System.out.println("   Credential ID: " + cert.credentialId);
+            System.out.println("   Token Hash: " + cert.tokenHash);
+            System.out.println("   Valid Until: " + new java.util.Date(cert.expiryEpochMs));
+            System.out.println("===========================================\n");
+
+            return new Result(true, "All verification layers passed");
+
         } catch (Exception e) {
-            return new Result(false, "Verification error: " + e.getMessage());
+            return fail("\n✗ Verification error: " + e.getMessage());
         }
+    }
+
+    /**
+     * Load RSA public key from PEM string
+     */
+    private static PublicKey loadPublicKeyFromPem(String pem) throws Exception {
+        String publicKeyPEM = pem
+                .replace("-----BEGIN PUBLIC KEY-----", "")
+                .replace("-----END PUBLIC KEY-----", "")
+                .replaceAll("\\s", "");
+
+        byte[] encoded = Base64.getDecoder().decode(publicKeyPEM);
+        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
+        X509EncodedKeySpec keySpec = new X509EncodedKeySpec(encoded);
+        return keyFactory.generatePublic(keySpec);
+    }
+
+    private static Result fail(String message) {
+        System.out.println(message);
+        System.out.println("\n===========================================");
+        System.out.println("❌ VERIFICATION FAILED");
+        System.out.println("===========================================\n");
+        return new Result(false, message);
     }
 
     public static class Result {

@@ -3,129 +3,275 @@ package com.vaultify.service;
 import java.nio.file.Path;
 import java.security.PrivateKey;
 import java.security.Signature;
+import java.sql.Timestamp;
 import java.util.Base64;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.List;
 
 import com.vaultify.crypto.HashUtil;
+import com.vaultify.dao.FileTokenDAO;
+import com.vaultify.dao.JdbcTokenDAO;
+import com.vaultify.models.Token;
 import com.vaultify.util.TokenUtil;
 import com.vaultify.verifier.Certificate;
 import com.vaultify.verifier.CertificateParser;
 
 /**
- * TokenService - Token generation, validation, and certificate creation.
+ * TokenService - Token generation, validation, and certificate creation with
+ * persistent storage.
  * 
  * Handles:
- * - Generating unique share tokens
+ * - Generating unique share tokens with DB persistence
  * - Creating signed certificates for tokens
- * - Validating token format
- * - Revoking tokens (simple in-memory set)
+ * - Validating token format and revocation status
+ * - Revoking tokens with persistence
+ * - Ledger integration for all token operations
  */
 public class TokenService {
     private final LedgerService ledgerService;
-    private final Set<String> revokedTokens; // Simple revocation list
+    private final JdbcTokenDAO jdbcTokenDAO;
+    private final FileTokenDAO fileTokenDAO;
 
     public TokenService() {
         this.ledgerService = new LedgerService();
-        this.revokedTokens = new HashSet<>();
+        this.jdbcTokenDAO = new JdbcTokenDAO();
+        this.fileTokenDAO = new FileTokenDAO();
     }
 
     /**
-     * Generate a unique share token.
+     * Generate and persist a share token.
      * 
-     * @return 32-character hex token
+     * @param issuerUserId User generating the token
+     * @param credentialId Credential being shared
+     * @param expiryHours  Token validity in hours
+     * @return Token object
      */
-    public String generateToken() {
-        return TokenUtil.generateToken();
+    public Token generateAndSaveToken(long issuerUserId, long credentialId, int expiryHours) {
+        String tokenString = TokenUtil.generateToken();
+        long expiry = System.currentTimeMillis() + (expiryHours * 3600L * 1000L);
+
+        Token token = new Token();
+        token.setToken(tokenString);
+        token.setIssuerUserId(issuerUserId);
+        token.setCredentialId(credentialId);
+        token.setExpiry(new Timestamp(expiry));
+        token.setRevoked(false);
+
+        // Save to BOTH storages
+        fileTokenDAO.save(token);
+        try {
+            jdbcTokenDAO.save(token);
+            System.out.println("[Dual Storage] Token saved to both File and Database");
+        } catch (Exception e) {
+            System.err.println("[Warning] Failed to save token to database: " + e.getMessage());
+        }
+
+        // Append to ledger using tokenHash (not raw token)
+        String tokenHash = HashUtil.sha256(tokenString);
+        String dataHash = HashUtil.sha256(tokenHash + ":" + credentialId);
+        // Note: Username lookup would require DAO injection - using ID for now
+        ledgerService.appendBlock(issuerUserId, "user_" + issuerUserId, "GENERATE_TOKEN", dataHash);
+
+        return token;
     }
 
-    /**
-     * Create a signed certificate for a token.
-     * 
-     * @param token            The share token
-     * @param issuerUserId     User ID of issuer
-     * @param credentialId     Credential being shared
-     * @param expiryHours      Token validity in hours
-     * @param issuerPrivateKey Issuer's RSA private key for signing
-     * @param outputPath       Where to save certificate JSON
-     * @return Created certificate
-     */
-    public Certificate createCertificate(String token, long issuerUserId, long credentialId,
-            int expiryHours, PrivateKey issuerPrivateKey,
-            Path outputPath) throws Exception {
+    public Token generateToken(long issuerUserId, long credentialId, int expiryHours) {
+        String tokenString = TokenUtil.generateToken();
+        long expiry = System.currentTimeMillis() + (expiryHours * 3600L * 1000L);
+        Token token = new Token();
+        token.setToken(tokenString);
+        token.setIssuerUserId(issuerUserId);
+        token.setCredentialId(credentialId);
+        token.setExpiry(new Timestamp(expiry));
+        token.setRevoked(false);
+        return token;
+    }
+
+    public void persistToken(Token token) {
+        fileTokenDAO.save(token);
+        try {
+            jdbcTokenDAO.save(token);
+        } catch (Exception e) {
+            System.err.println("[Warning] DB persist failed for token: " + e.getMessage());
+        }
+    }
+
+    public Certificate createCertificate(Token token, com.vaultify.models.CredentialMetadata meta,
+            PrivateKey issuerPrivateKey, Path issuerPublicKeyPath, Path outputPath) throws Exception {
         long now = System.currentTimeMillis();
-        long expiry = now + (expiryHours * 3600L * 1000L);
 
-        // Create payload hash: sha256(token|issuer|credential|expiry)
-        String payload = token + "|" + issuerUserId + "|" + credentialId + "|" + expiry;
-        String payloadHash = HashUtil.sha256(payload);
+        // Step A1: Compute tokenHash = SHA256(token)
+        String tokenHash = HashUtil.sha256(token.getToken());
 
-        // Sign the payload hash with issuer's private key
+        // Step A2: Read issuer public key for inclusion
+        String issuerPublicKeyPem = java.nio.file.Files.readString(issuerPublicKeyPath);
+
+        // Step A3: Compute payloadHash = SHA256(tokenHash + credentialId +
+        // issuerPublicKey + expiry)
+        String payloadData = tokenHash + "|" + token.getCredentialId() + "|" +
+                issuerPublicKeyPem + "|" + token.getExpiry().getTime();
+        String payloadHash = HashUtil.sha256(payloadData);
+
+        // Step A4: Sign payloadHash using RSA private key
         Signature sig = Signature.getInstance("SHA256withRSA");
         sig.initSign(issuerPrivateKey);
         sig.update(payloadHash.getBytes());
         byte[] signature = sig.sign();
         String signatureBase64 = Base64.getEncoder().encodeToString(signature);
 
-        // Append to ledger and get block hash
-        String ledgerBlockHash = ledgerService.appendBlock("GENERATE_TOKEN", payloadHash).getHash();
+        // Step A5: Submit to Ledger Server
+        String dataHash = HashUtil.sha256(tokenHash + ":" + token.getCredentialId());
+        com.vaultify.models.LedgerBlock block = ledgerService.appendBlock(
+                token.getIssuerUserId(),
+                "user-" + token.getIssuerUserId(),
+                "CERT_GENERATED",
+                dataHash,
+                Long.toString(token.getCredentialId()),
+                tokenHash);
+        String ledgerBlockHash = block != null ? block.getHash() : "";
 
-        // Create certificate
+        // Build Certificate
         Certificate cert = new Certificate();
-        cert.token = token;
-        cert.issuerUserId = issuerUserId;
-        cert.credentialId = credentialId;
-        cert.expiryEpochMs = expiry;
-        cert.payloadHash = payloadHash;
-        cert.signatureBase64 = signatureBase64;
-        cert.ledgerBlockHash = ledgerBlockHash;
+        cert.tokenHash = tokenHash; // Store tokenHash, NOT raw token
+        cert.credentialId = token.getCredentialId();
+        cert.issuerUserId = token.getIssuerUserId();
+        cert.credentialHash = meta.credentialHash;
+        cert.issuerPublicKeyPem = issuerPublicKeyPem;
+        cert.expiryEpochMs = token.getExpiry().getTime();
         cert.createdAtMs = now;
+        cert.payloadHash = payloadHash;
+        cert.ledgerBlockHash = ledgerBlockHash;
+        cert.signatureBase64 = signatureBase64;
 
-        // Save to file
+        // Step A6: Register certificate with ledger server
+        com.vaultify.client.LedgerClient.storeCertificate(cert);
+
         CertificateParser.save(cert, outputPath);
-
-        System.out.println("✓ Certificate created: " + outputPath);
-        System.out.println("  Token: " + token);
-        System.out.println("  Expires: " + new java.util.Date(expiry));
-
+        System.out.println("✓ Certificate created and registered with ledger server");
+        System.out.println("  Token Hash: " + tokenHash);
+        System.out.println("  Ledger Block: " + ledgerBlockHash);
         return cert;
     }
 
     /**
-     * Validate token format (basic check).
+     * Create a signed certificate for a token.
      * 
-     * @param token Token to validate
-     * @return true if format is valid
+     * @param token            Token object
+     * @param issuerPrivateKey Issuer's RSA private key for signing
+     * @param outputPath       Where to save certificate JSON
+     * @return Created certificate
      */
-    public boolean validateToken(String token) {
-        if (token == null || token.length() != 32) {
-            return false;
+    // Legacy createCertificate method removed in favor of metadata-bound version
+    // above.
+
+    /**
+     * Validate token (check format, expiry, and revocation).
+     * 
+     * @param tokenString Token to validate
+     * @return Token object if valid, null otherwise
+     */
+    public Token validateToken(String tokenString) {
+        if (tokenString == null || tokenString.length() != 32 || !tokenString.matches("[0-9a-f]{32}")) {
+            return null;
         }
 
-        // Check if revoked
-        if (revokedTokens.contains(token)) {
-            System.out.println("✗ Token has been revoked");
-            return false;
+        // Try to load from DB first
+        Token token = null;
+        try {
+            token = jdbcTokenDAO.findByToken(tokenString);
+        } catch (Exception e) {
+            // Fallback to file
         }
 
-        // Check hex format
-        return token.matches("[0-9a-f]{32}");
+        if (token == null) {
+            token = fileTokenDAO.findByToken(tokenString);
+        }
+
+        if (token == null) {
+            System.out.println("✗ Token not found");
+            return null;
+        }
+
+        if (!token.isValid()) {
+            if (token.isRevoked()) {
+                System.out.println("✗ Token has been revoked");
+            } else {
+                System.out.println("✗ Token has expired");
+            }
+            return null;
+        }
+
+        return token;
     }
 
     /**
-     * Revoke a token (add to revocation list).
+     * Revoke a token with persistence.
      * 
-     * @param token Token to revoke
+     * @param tokenString Token to revoke
      */
-    public void revokeToken(String token) {
-        revokedTokens.add(token);
-        System.out.println("✓ Token revoked: " + token);
+    public void revokeToken(String tokenString) {
+        try {
+            jdbcTokenDAO.revokeToken(tokenString);
+        } catch (Exception e) {
+            System.err.println("[Warning] Failed to revoke in database: " + e.getMessage());
+        }
+
+        // Also mark in file storage
+        Token token = fileTokenDAO.findByToken(tokenString);
+        if (token != null) {
+            token.setRevoked(true);
+            fileTokenDAO.save(token);
+        }
+
+        // Revoke on ledger server using tokenHash
+        String tokenHash = HashUtil.sha256(tokenString);
+        boolean serverRevoked = com.vaultify.client.LedgerClient.revokeToken(tokenHash);
+
+        // Also append to local ledger (using token's issuer info if available)
+        String dataHash = HashUtil.sha256("REVOKE:" + tokenHash);
+        if (token != null) {
+            ledgerService.appendBlock(token.getIssuerUserId(), "user_" + token.getIssuerUserId(), "TOKEN_REVOKED",
+                    dataHash);
+        } else {
+            ledgerService.appendBlock(0L, "system", "TOKEN_REVOKED", dataHash);
+        }
+
+        if (serverRevoked) {
+            System.out.println("✓ Token revoked locally and on ledger server");
+        } else {
+            System.out.println("✓ Token revoked locally (ledger server unreachable)");
+        }
     }
 
     /**
-     * Check if token is revoked.
+     * List all tokens for a user.
      */
-    public boolean isRevoked(String token) {
-        return revokedTokens.contains(token);
+    public List<Token> listUserTokens(long userId) {
+        List<Token> tokens = new java.util.ArrayList<>();
+        try {
+            tokens = jdbcTokenDAO.findByUserId(userId);
+            if (!tokens.isEmpty()) {
+                return tokens;
+            }
+        } catch (Exception e) {
+            System.err.println("[Warning] DB token list failed: " + e.getMessage());
+        }
+        // Fallback to file storage
+        return fileTokenDAO.findAll().stream()
+                .filter(t -> t.getIssuerUserId() == userId)
+                .toList();
+    }
+
+    /**
+     * Clean up expired tokens.
+     */
+    public int cleanupExpiredTokens() {
+        try {
+            int deleted = jdbcTokenDAO.deleteExpiredTokens();
+            System.out.println("✓ Cleaned up " + deleted + " expired tokens");
+            return deleted;
+        } catch (Exception e) {
+            System.err.println("✗ Failed to cleanup expired tokens: " + e.getMessage());
+            return 0;
+        }
     }
 }

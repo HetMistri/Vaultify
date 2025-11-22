@@ -9,16 +9,17 @@ Vaultify is a **Java-based secure credential vault** system demonstrating enterp
 
 ## 🎯 Project Status
 
-**Current Implementation Phase:** Day 1 - Architecture & Skeleton (Complete ✅)
+**Implementation:** Fully Functional Production-Ready System ✅
 
-- ✅ **Service Layer:** All 6 services defined (UserService, VaultService, AuthService, TokenService, LedgerService, VerificationService)
-- ✅ **Crypto Layer:** CryptoEngine interface with AES & RSA implementations (skeletons)
-- ✅ **Threading Layer:** ThreadManager with async execution, scheduling, and graceful shutdown
-- ✅ **Ledger System:** Fully functional blockchain-inspired ledger with integrity verification
-- ✅ **Build System:** Gradle 8.10 with custom tasks, fat JAR packaging
-- ✅ **Docker:** Multi-stage builds, health checks, environment variable support
-- ⏳ **DAO Layer:** Skeleton classes (implementation pending)
-- ⏳ **Business Logic:** Service methods are TODO stubs awaiting implementation
+- ✅ **Service Layer:** All 6 services fully implemented with remote ledger integration
+- ✅ **Crypto Layer:** AES-256-GCM and RSA-2048 OAEP complete implementations
+- ✅ **Threading Layer:** ThreadManager with async logging, encryption tasks, and token cleanup
+- ✅ **Ledger System:** Remote Node.js ledger server with REST API
+- ✅ **Certificate System:** Complete token generation and verification pipeline
+- ✅ **DAO Layer:** Dual storage (File + JDBC) with automatic failover
+- ✅ **CLI:** Interactive command-line interface with full credential management
+- ✅ **Build System:** Gradle 8.10 with custom tasks and fat JAR packaging
+- ✅ **Docker:** Multi-container setup (PostgreSQL + App)
 
 ## 📋 Table of Contents
 
@@ -98,14 +99,13 @@ com.vaultify/
 │   ├── Credential.java
 │   ├── CredentialMetadata.java
 │   ├── CredentialType.java
-│   └── Token.java
-├── ledger/           # Blockchain-inspired audit
-│   ├── LedgerEngine.java (✅ Implemented)
-│   └── LedgerBlock.java (✅ Implemented)
+│   ├── Token.java
+│   └── LedgerBlock.java (✅ Remote ledger model)
+├── client/           # Remote server integration
+│   └── LedgerClient.java (✅ HTTP client for ledger-server)
 ├── threading/        # Concurrency management
 │   ├── ThreadManager.java (✅ Implemented)
 │   ├── EncryptionTask.java
-│   ├── LedgerWriter.java
 │   ├── ActivityLogger.java
 │   └── TokenExpiryScheduler.java
 ├── db/               # Database connection
@@ -145,13 +145,14 @@ com.vaultify/
 - SHA-256 hashing for integrity
 - Current state: Interface and method signatures ready
 
-**Ledger Layer** (Audit Trail)
+**Ledger Layer** (Remote Audit Trail)
 
-- ✅ Genesis block initialization
-- ✅ SHA-256 hash linking (prevHash → currentHash)
-- ✅ Integrity verification
-- ✅ JSON persistence with pretty printing
-- ✅ Thread-safe operations
+- ✅ External Node.js ledger-server (Express.js)
+- ✅ HTTP client integration (LedgerClient.java)
+- ✅ Certificate registry and token revocation
+- ✅ Public key distribution
+- ✅ Cross-machine verification support
+- ✅ Tamper-evident blockchain
 
 ## 📁 Project Structure
 
@@ -166,8 +167,11 @@ Vaultify/
 │   ├── Dockerfile             # Multi-stage app build
 │   ├── Dockerfile.postgres    # PostgreSQL with init script
 │   └── init-db.sql            # Database schema
-├── vault_data/                # Runtime data (mounted volume)
-│   ├── ledger.json            # Blockchain audit trail
+├── ledger-server/             # Node.js ledger server
+│   ├── src/                   # Server source code
+│   ├── data/                  # Persistent ledger storage
+│   └── package.json           # Node dependencies
+├── vault_data/                # Local runtime data
 │   ├── credentials/           # Encrypted credential storage
 │   ├── keys/                  # RSA keypairs
 │   └── certificates/          # Verification certificates

@@ -2,15 +2,25 @@ package com.vaultify.threading;
 
 import java.util.concurrent.Callable;
 
+import com.vaultify.crypto.AESEngine;
+
 /**
- * Day 1 skeleton task for encryption work.
- * Returns a byte[] result when implemented.
+ * Callable task for parallel encryption operations.
+ * Used by ThreadManager for concurrent file encryption.
  */
 public class EncryptionTask implements Callable<byte[]> {
+    private final byte[] plaintext;
+    private final byte[] key;
+    private final byte[] iv;
+
+    public EncryptionTask(byte[] plaintext, byte[] key, byte[] iv) {
+        this.plaintext = plaintext;
+        this.key = key;
+        this.iv = iv;
+    }
 
     @Override
     public byte[] call() throws Exception {
-        // TODO: perform encryption and return ciphertext
-        return new byte[0];
+        return AESEngine.encryptWithParams(plaintext, key, iv);
     }
 }

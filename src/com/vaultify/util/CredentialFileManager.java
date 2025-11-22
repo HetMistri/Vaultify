@@ -65,6 +65,8 @@ public class CredentialFileManager {
         // Create metadata
         CredentialMetadata meta = new CredentialMetadata();
         meta.credentialIdString = credentialId;
+        // Credential hash must bind to encrypted bytes for integrity (not just ID)
+        meta.credentialHash = HashUtil.sha256(ciphertext);
         meta.filename = plainFile.getFileName().toString();
         meta.dataHash = originalHash;
         meta.fileSize = plaintext.length;

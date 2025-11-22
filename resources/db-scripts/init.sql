@@ -1,7 +1,12 @@
+--Initialization script for Vaultify Database inside of Docker
+--This script is auto-executed by PostgreSQL Docker container on first startup
+
 -- 1. Create the database
 CREATE DATABASE vaultify;
 
--- 2. Connect to the database (e.g., \c vaultify) and run the schema:
+-- Schema used for Vaultify Database
+--Running this script in a DBMS will setup the necessary tables and relationships. 
+-- Note: Database should be created separately if not using Docker.
 
 CREATE TABLE users (    id SERIAL PRIMARY KEY,
     username VARCHAR(100) UNIQUE NOT NULL,

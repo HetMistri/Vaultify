@@ -30,6 +30,11 @@ application {
     mainClass = 'com.vaultify.app.VaultifyApplication'
 }
 
+// Configure the default 'run' task to accept stdin
+run {
+    standardInput = System.in
+}
+
 jar {
     // Ensure duplicate classes/resources don't break packaging
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -56,6 +61,93 @@ tasks.register('runLocal', JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.vaultify.app.VaultifyApplication'
     standardInput = System.in
+    // Start ledger-server automatically unless skipLedger=true
+    doFirst {
+        if (System.properties['skipLedger'] == 'true') {
+            println "[runLocal] Skipping ledger server startup (skipLedger=true)"
+        } else {
+            if (!project.ext.has('ledgerProcess') || !(project.ext.ledgerProcess?.isAlive())) {
+                // Additional port check to prevent duplicate start on new Gradle invocation
+                def portInUse = false
+                try {
+                    new Socket('127.0.0.1', 3000).withCloseable { portInUse = true }
+                } catch(Exception ignored) {}
+                if (portInUse) {
+                    println "[runLocal] Ledger server already running on port 3000"
+                } else {
+                    println "[runLocal] Launching ledger server (inline)"
+                    def isWindows = System.getProperty('os.name').toLowerCase().contains('win')
+                    def cmd = isWindows ? ['cmd','/c','npm','run','dev'] : ['npm','run','dev']
+                    def workingDir = new File("${projectDir}/ledger-server")
+                    if (!workingDir.exists()) {
+                        println "[runLocal] WARNING: ledger-server directory not found at ${workingDir}"
+                    } else {
+                        Process p = new ProcessBuilder(cmd)
+                                .directory(workingDir)
+                                .redirectErrorStream(true)
+                                .start()
+                        project.ext.ledgerProcess = p
+                        Thread.start {
+                            p.inputStream.withReader { r -> r.eachLine { line -> println "[ledger] $line" } }
+                        }
+                        println "[runLocal] Ledger server started (PID=${p.pid()})"
+                    }
+                }
+            } else {
+                println "[runLocal] Ledger server already running"
+            }
+        }
+    }
+}
+
+// Launch the Node.js ledger server in background (non-blocking)
+tasks.register('runLedgerService') {
+    group = 'vaultify'
+    description = 'Start the external ledger-server (npm run dev) in background'
+    doLast {
+        if (project.ext.has('ledgerProcess') && project.ext.ledgerProcess?.isAlive()) {
+            println "[runLedgerService] Ledger server already running"
+            return
+        }
+        // Port check so we don't spawn duplicate failing process
+        def portInUse = false
+        try { new Socket('127.0.0.1',3000).withCloseable { portInUse = true } } catch(Exception ignored) {}
+        if (portInUse) {
+            println "[runLedgerService] Detected existing server on port 3000; skipping spawn"
+            return
+        }
+        def isWindows = System.getProperty('os.name').toLowerCase().contains('win')
+        def cmd = isWindows ? ['cmd','/c','npm','run','dev'] : ['npm','run','dev']
+        def workingDir = new File("${projectDir}/ledger-server")
+        if (!workingDir.exists()) {
+            throw new GradleException("ledger-server directory not found at ${workingDir}")
+        }
+        println "[runLedgerService] Starting ledger server in ${workingDir}"
+        Process p = new ProcessBuilder(cmd)
+                .directory(workingDir)
+                .redirectErrorStream(true)
+                .start()
+        project.ext.ledgerProcess = p
+        Thread.start {
+            p.inputStream.withReader { r -> r.eachLine { line -> println "[ledger] $line" } }
+        }
+        println "[runLedgerService] Ledger server started (PID=${p.pid()})"
+    }
+}
+
+// Stop the background ledger server if running
+tasks.register('stopLedgerService') {
+    group = 'vaultify'
+    description = 'Stop the background ledger-server process'
+    doLast {
+        if (project.ext.has('ledgerProcess') && project.ext.ledgerProcess?.isAlive()) {
+            println "[stopLedgerService] Stopping ledger server (PID=${project.ext.ledgerProcess.pid()})"
+            project.ext.ledgerProcess.destroy()
+            project.ext.ledgerProcess = null
+        } else {
+            println "[stopLedgerService] No running ledger server process found"
+        }
+    }
 }
 
 tasks.register('testDb', JavaExec) {

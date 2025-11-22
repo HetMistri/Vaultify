@@ -7,12 +7,13 @@ import java.util.List;
 
 import com.vaultify.crypto.HashUtil;
 import com.vaultify.dao.FileCredentialDAO;
+import com.vaultify.dao.JdbcCredentialDAO;
 import com.vaultify.models.CredentialMetadata;
 import com.vaultify.threading.ThreadManager;
 import com.vaultify.util.CredentialFileManager;
 
 /**
- * VaultService - REAL IMPLEMENTATION
+ * VaultService - REAL IMPLEMENTATION with DUAL STORAGE
  * 
  * Core credential vaulting operations:
  * - Encrypt and store files
@@ -20,21 +21,25 @@ import com.vaultify.util.CredentialFileManager;
  * - Retrieve (decrypt) files
  * - Delete credentials
  * 
- * Uses CredentialFileManager for encryption and FileCredentialDAO for metadata
- * persistence.
+ * Uses DUAL storage: File-based for encrypted data + JDBC for metadata
+ * querying.
+ * CredentialFileManager handles encryption, both DAOs persist metadata.
  */
 public class VaultService {
     private final LedgerService ledgerService;
-    private final FileCredentialDAO credentialDAO;
+    private final FileCredentialDAO fileCredentialDAO;
+    private final JdbcCredentialDAO jdbcCredentialDAO;
 
     public VaultService() {
         this.ledgerService = new LedgerService();
-        this.credentialDAO = new FileCredentialDAO();
+        this.fileCredentialDAO = new FileCredentialDAO();
+        this.jdbcCredentialDAO = new JdbcCredentialDAO();
     }
 
-    public VaultService(LedgerService ledgerService, FileCredentialDAO credentialDAO) {
+    public VaultService(LedgerService ledgerService, FileCredentialDAO fileDAO, JdbcCredentialDAO jdbcDAO) {
         this.ledgerService = ledgerService;
-        this.credentialDAO = credentialDAO;
+        this.fileCredentialDAO = fileDAO;
+        this.jdbcCredentialDAO = jdbcDAO;
     }
 
     /**
@@ -49,12 +54,18 @@ public class VaultService {
         // 1. Encrypt file and generate metadata
         CredentialMetadata meta = CredentialFileManager.encryptAndStore(filePath, userPublicKey, userId);
 
-        // 2. Save metadata to DAO
-        credentialDAO.save(meta);
+        // 2. Save metadata to BOTH storage backends
+        fileCredentialDAO.save(meta); // JSON file
+        try {
+            jdbcCredentialDAO.save(meta, userId); // PostgreSQL database
+            System.out.println("[Dual Storage] Credential metadata saved to both File and Database");
+        } catch (Exception e) {
+            System.err.println("[Warning] Failed to save credential to database: " + e.getMessage());
+        }
 
         // 3. Append to ledger asynchronously
         String dataHash = HashUtil.sha256(meta.credentialIdString + ":" + meta.dataHash);
-        ThreadManager.runAsync(() -> ledgerService.appendBlock("ADD_CREDENTIAL", dataHash));
+        ThreadManager.runAsync(() -> ledgerService.appendBlock(userId, "user_" + userId, "ADD_CREDENTIAL", dataHash));
 
         System.out.println("✓ Credential added: " + meta.filename + " (ID: " + meta.credentialIdString + ")");
         return meta.credentialIdString;
@@ -67,8 +78,19 @@ public class VaultService {
      * @return List of credential metadata
      */
     public List<CredentialMetadata> listCredentials(long userId) {
-        List<CredentialMetadata> all = credentialDAO.findAll();
-        // Filter by userId
+        // Try JDBC first (faster with indexed queries)
+        try {
+            List<CredentialMetadata> dbList = jdbcCredentialDAO.findByUserId(userId);
+            if (!dbList.isEmpty()) {
+                System.out.println("[Dual Storage] Credentials loaded from Database");
+                return dbList;
+            }
+        } catch (Exception e) {
+            System.out.println("[Dual Storage] Database unavailable, using File storage");
+        }
+
+        // Fallback to file storage
+        List<CredentialMetadata> all = fileCredentialDAO.findAll();
         return all.stream()
                 .filter(c -> c.userId == userId)
                 .toList();
@@ -82,8 +104,23 @@ public class VaultService {
      * @return Decrypted file contents
      */
     public byte[] retrieveCredential(String credentialId, PrivateKey userPrivateKey) throws Exception {
-        // 1. Load metadata
-        CredentialMetadata meta = credentialDAO.findById(credentialId);
+        // 1. Load metadata (try JDBC first, fallback to File)
+        CredentialMetadata meta = null;
+        try {
+            // Try database first
+            List<CredentialMetadata> allFromDb = jdbcCredentialDAO.findByUserId(0); // Get all, filter by ID
+            meta = allFromDb.stream()
+                    .filter(c -> credentialId.equals(c.credentialIdString))
+                    .findFirst()
+                    .orElse(null);
+        } catch (Exception e) {
+            // Database unavailable, use file
+        }
+
+        if (meta == null) {
+            meta = fileCredentialDAO.findById(credentialId);
+        }
+
         if (meta == null) {
             throw new IllegalArgumentException("Credential not found: " + credentialId);
         }
@@ -107,7 +144,7 @@ public class VaultService {
      */
     public void deleteCredential(String credentialId, long userId) throws Exception {
         // 1. Load metadata
-        CredentialMetadata meta = credentialDAO.findById(credentialId);
+        CredentialMetadata meta = fileCredentialDAO.findById(credentialId);
         if (meta == null) {
             throw new IllegalArgumentException("Credential not found: " + credentialId);
         }
@@ -120,12 +157,19 @@ public class VaultService {
         // 3. Delete encrypted file
         CredentialFileManager.deleteEncryptedFile(credentialId);
 
-        // 4. Delete metadata
-        credentialDAO.delete(credentialId);
+        // 4. Delete metadata from BOTH storages
+        fileCredentialDAO.delete(credentialId);
+        try {
+            jdbcCredentialDAO.delete(credentialId);
+            System.out.println("[Dual Storage] Credential deleted from both File and Database");
+        } catch (Exception e) {
+            System.err.println("[Warning] Failed to delete from database: " + e.getMessage());
+        }
 
         // 5. Append to ledger
         String dataHash = HashUtil.sha256("DELETE:" + credentialId);
-        ThreadManager.runAsync(() -> ledgerService.appendBlock("DELETE_CREDENTIAL", dataHash));
+        ThreadManager
+                .runAsync(() -> ledgerService.appendBlock(userId, "user_" + userId, "DELETE_CREDENTIAL", dataHash));
 
         System.out.println("✓ Credential deleted: " + credentialId);
     }
