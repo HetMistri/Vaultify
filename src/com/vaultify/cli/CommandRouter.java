@@ -52,7 +52,6 @@ public class CommandRouter {
     // Static router (reusable)
     // -------------------------
     public static void handle(String command, Scanner scanner) {
-        boolean devMode = Config.get("dev.mode", "false").equalsIgnoreCase("true");
         switch (command) {
             case "register" -> register(scanner);
             case "login" -> login(scanner);

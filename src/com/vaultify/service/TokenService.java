@@ -1,15 +1,20 @@
 package com.vaultify.service;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.PrivateKey;
 import java.security.Signature;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 
+import com.vaultify.client.LedgerClient;
 import com.vaultify.crypto.HashUtil;
 import com.vaultify.dao.FileTokenDAO;
 import com.vaultify.dao.JdbcTokenDAO;
+import com.vaultify.models.CredentialMetadata;
+import com.vaultify.models.LedgerBlock;
 import com.vaultify.models.Token;
 import com.vaultify.util.TokenUtil;
 import com.vaultify.verifier.Certificate;
@@ -95,7 +100,7 @@ public class TokenService {
         }
     }
 
-    public Certificate createCertificate(Token token, com.vaultify.models.CredentialMetadata meta,
+    public Certificate createCertificate(Token token, CredentialMetadata meta,
             PrivateKey issuerPrivateKey, Path issuerPublicKeyPath, Path outputPath) throws Exception {
         long now = System.currentTimeMillis();
 
@@ -103,7 +108,7 @@ public class TokenService {
         String tokenHash = HashUtil.sha256(token.getToken());
 
         // Step A2: Read issuer public key for inclusion
-        String issuerPublicKeyPem = java.nio.file.Files.readString(issuerPublicKeyPath);
+        String issuerPublicKeyPem = Files.readString(issuerPublicKeyPath);
 
         // Step A3: Compute payloadHash = SHA256(tokenHash + credentialId +
         // issuerPublicKey + expiry)
@@ -120,7 +125,7 @@ public class TokenService {
 
         // Step A5: Submit to Ledger Server
         String dataHash = HashUtil.sha256(tokenHash + ":" + token.getCredentialId());
-        com.vaultify.models.LedgerBlock block = ledgerService.appendBlock(
+        LedgerBlock block = ledgerService.appendBlock(
                 token.getIssuerUserId(),
                 "user-" + token.getIssuerUserId(),
                 "CERT_GENERATED",
@@ -143,7 +148,7 @@ public class TokenService {
         cert.signatureBase64 = signatureBase64;
 
         // Step A6: Register certificate with ledger server
-        com.vaultify.client.LedgerClient.storeCertificate(cert);
+        LedgerClient.storeCertificate(cert);
 
         CertificateParser.save(cert, outputPath);
         System.out.println("✓ Certificate created and registered with ledger server");
@@ -224,7 +229,7 @@ public class TokenService {
 
         // Revoke on ledger server using tokenHash
         String tokenHash = HashUtil.sha256(tokenString);
-        boolean serverRevoked = com.vaultify.client.LedgerClient.revokeToken(tokenHash);
+        boolean serverRevoked = LedgerClient.revokeToken(tokenHash);
 
         // Also append to local ledger (using token's issuer info if available)
         String dataHash = HashUtil.sha256("REVOKE:" + tokenHash);
@@ -246,7 +251,7 @@ public class TokenService {
      * List all tokens for a user.
      */
     public List<Token> listUserTokens(long userId) {
-        List<Token> tokens = new java.util.ArrayList<>();
+        List<Token> tokens = new ArrayList<>();
         try {
             tokens = jdbcTokenDAO.findByUserId(userId);
             if (!tokens.isEmpty()) {
@@ -264,14 +269,11 @@ public class TokenService {
     /**
      * Clean up expired tokens.
      */
-    public int cleanupExpiredTokens() {
+    public void cleanupExpiredTokens() {
         try {
-            int deleted = jdbcTokenDAO.deleteExpiredTokens();
-            System.out.println("✓ Cleaned up " + deleted + " expired tokens");
-            return deleted;
+            jdbcTokenDAO.deleteExpiredTokens();
         } catch (Exception e) {
             System.err.println("✗ Failed to cleanup expired tokens: " + e.getMessage());
-            return 0;
         }
     }
 }

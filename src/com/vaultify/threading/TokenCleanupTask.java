@@ -19,12 +19,9 @@ public class TokenCleanupTask implements Runnable {
     public void run() {
         try {
             System.out.println("[TokenCleanup] Running expired token cleanup...");
-            int cleaned = tokenService.cleanupExpiredTokens();
-            if (cleaned > 0) {
-                System.out.println("[TokenCleanup] Removed " + cleaned + " expired tokens");
-            }
+            tokenService.cleanupExpiredTokens();
         } catch (Exception e) {
-            System.err.println("[TokenCleanup] Error during cleanup: " + e.getMessage());
+            System.err.println("[TokenCleanup] ✗ Error during cleanup: " + e.getMessage());
         }
     }
 }
