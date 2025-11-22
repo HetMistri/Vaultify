@@ -30,6 +30,11 @@ application {
     mainClass = 'com.vaultify.app.VaultifyApplication'
 }
 
+// Configure the default 'run' task to accept stdin
+run {
+    standardInput = System.in
+}
+
 jar {
     // Ensure duplicate classes/resources don't break packaging
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
@@ -50,26 +55,13 @@ jar {
 }
 
 
+
 tasks.register('runLocal', JavaExec) {
     group = "vaultify"
     description = "Run Vaultify locally without Docker"
     classpath = sourceSets.main.runtimeClasspath
     mainClass = 'com.vaultify.app.VaultifyApplication'
     standardInput = System.in
-}
-
-tasks.register('testDb', JavaExec) {
-    group = "vaultify"
-    description = "Test database connection"
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.vaultify.db.Database'
-}
-
-tasks.register('testAuth', JavaExec) {
-    group = "vaultify"
-    description = "Test authentication (login/signup)"
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'com.vaultify.test.AuthTest'
 }
 
 tasks.register('rebuild') {

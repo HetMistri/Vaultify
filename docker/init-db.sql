@@ -15,15 +15,21 @@ CREATE TABLE IF NOT EXISTS credentials (
     user_id INT REFERENCES users(id) ON DELETE CASCADE,
     filename TEXT,
     filepath TEXT UNIQUE NOT NULL,
-    metadata TEXT,
+    encrypted_key TEXT NOT NULL,
+    iv TEXT NOT NULL,
+    data_hash TEXT NOT NULL,
+    file_size BIGINT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS tokens (
     id SERIAL PRIMARY KEY,
     credential_id INT REFERENCES credentials(id) ON DELETE CASCADE,
+    issuer_user_id INT REFERENCES users(id) ON DELETE CASCADE,
     token TEXT UNIQUE NOT NULL,
-    expiry TIMESTAMP NOT NULL
+    expiry TIMESTAMP NOT NULL,
+    revoked BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create indexes for performance

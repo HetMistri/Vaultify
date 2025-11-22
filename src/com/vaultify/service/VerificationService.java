@@ -1,17 +1,8 @@
 package com.vaultify.service;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.security.PrivateKey;
-import java.security.Signature;
-import java.time.Duration;
-import java.util.Base64;
 
 import com.vaultify.crypto.HashUtil;
-import com.vaultify.crypto.KeyManager;
-import com.vaultify.util.Config;
-import com.vaultify.util.TokenUtil;
 import com.vaultify.verifier.Certificate;
 import com.vaultify.verifier.CertificateParser;
 import com.vaultify.verifier.CertificateVerifier;
@@ -35,74 +26,24 @@ public class VerificationService {
         this.ledgerService = ledgerService;
     }
 
-    /**
-     * Generate a share token and a signed certificate file on disk.
-     *
-     * Minimal inputs:
-     * - issuerUserId: numeric id for the user issuing the share (informational)
-     * - credentialId: id of credential being shared
-     * - issuerPrivateKeyPath: path to issuer's PKCS#8 PEM private key (on disk)
-     * - expiryHours: how long token is valid
-     *
-     * Returns path to certificate file (and prints token).
-     */
-    public Path generateShareToken(long issuerUserId, long credentialId, Path issuerPrivateKeyPath, int expiryHours)
-            throws Exception {
-        // create token
-        String token = TokenUtil.generateToken();
-        long now = System.currentTimeMillis();
-        long expiryMs = now + Duration.ofHours(Math.max(1, expiryHours)).toMillis();
-
-        // payload string deterministically
-        String payload = token + "|" + issuerUserId + "|" + credentialId + "|" + expiryMs;
-        String payloadHash = HashUtil.sha256(payload);
-
-        // sign payloadHash with issuer private key
-        KeyManager km = new KeyManager();
-        PrivateKey priv = km.loadPrivateKey(issuerPrivateKeyPath);
-        Signature sig = Signature.getInstance("SHA256withRSA");
-        sig.initSign(priv);
-        sig.update(payloadHash.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        byte[] signature = sig.sign();
-        String signatureB64 = Base64.getEncoder().encodeToString(signature);
-
-        // append ledger block (synchronous) and get block hash
-        String action = "GENERATE_TOKEN";
-        com.vaultify.ledger.LedgerBlock ledgerBlock = ledgerService.appendBlock(action, payloadHash);
-        String ledgerHash = ledgerBlock.getHash();
-
-        // Build certificate object
-        Certificate cert = new Certificate();
-        cert.token = token;
-        cert.issuerUserId = issuerUserId;
-        cert.credentialId = credentialId;
-        cert.expiryEpochMs = expiryMs;
-        cert.payloadHash = payloadHash;
-        cert.signatureBase64 = signatureB64;
-        cert.ledgerBlockHash = ledgerHash;
-        cert.createdAtMs = now;
-
-        // Save certificate JSON to disk
-        String certificateDir = Config.get("certificate.output", "./vault_data/certificates/");
-        Path outDir = Paths.get(certificateDir);
-        Files.createDirectories(outDir);
-        Path out = outDir.resolve("cert-" + token + ".json");
-        CertificateParser.save(cert, out);
-
-        // print essential info
-        System.out.println("Generated token: " + token);
-        System.out.println("Saved certificate: " + out.toAbsolutePath());
-
-        return out;
-    }
+    // Certificate generation moved to TokenService. This service now focuses solely
+    // on verification.
 
     /**
-     * Verify certificate at certPath using issuer public key path.
+     * Verify certificate using 4-layer verification.
+     * Requires the raw token string from the user.
      * Returns CertificateVerifier.Result describing validity and message.
+     * Appends VALIDATE_CERT entry to ledger.
      */
-    public CertificateVerifier.Result verifyCertificate(Path certPath, Path issuerPublicKeyPath) throws Exception {
+    public CertificateVerifier.Result verifyCertificate(Path certPath, String token) throws Exception {
         Certificate cert = CertificateParser.parse(certPath);
-        CertificateVerifier.Result res = CertificateVerifier.verify(cert, issuerPublicKeyPath, ledgerService);
+
+        // Perform complete 4-layer verification
+        CertificateVerifier.Result res = CertificateVerifier.verify(cert, token);
+
+        // Append verification result to ledger
+        String dataHash = HashUtil.sha256(cert.tokenHash + "|valid=" + res.valid);
+        ledgerService.appendBlock(0L, "verifier", "VALIDATE_CERT", dataHash);
         return res;
     }
 }

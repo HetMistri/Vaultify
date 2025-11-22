@@ -7,6 +7,7 @@ public class CredentialMetadata {
 
     // Additional fields for file-based credential system
     public String credentialIdString; // UUID for this credential
+    public String credentialHash; // SHA-256 hash of credentialId (for ledger/verification)
     public String dataHash; // SHA-256 hash of original file
     public long fileSize; // Original file size in bytes
     public long timestamp; // Creation timestamp

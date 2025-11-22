@@ -9,23 +9,30 @@ import com.vaultify.crypto.AESEngine;
 import com.vaultify.crypto.HashUtil;
 import com.vaultify.crypto.RSAEngine;
 import com.vaultify.dao.FileUserDAO;
+import com.vaultify.dao.JdbcUserDAO;
 import com.vaultify.models.User;
+import com.vaultify.threading.ThreadManager;
 
 /**
  * AuthService handles authentication operations: login, registration, session
  * management.
+ * Uses DUAL storage: File-based for backup/portability + JDBC for querying.
  * Uses crypto for password hashing, RSA key generation, and AES private key
  * encryption.
  */
 public class AuthService {
-    private final FileUserDAO userDAO;
+    private final FileUserDAO fileUserDAO;
+    private final JdbcUserDAO jdbcUserDAO;
+    private final LedgerService ledgerService;
 
     // Current session
     private User currentUser;
     private PrivateKey currentUserPrivateKey;
 
     public AuthService() {
-        this.userDAO = new FileUserDAO();
+        this.fileUserDAO = new FileUserDAO();
+        this.jdbcUserDAO = new JdbcUserDAO();
+        this.ledgerService = new LedgerService();
     }
 
     /**
@@ -41,8 +48,8 @@ public class AuthService {
             throw new IllegalArgumentException("Username and password cannot be empty");
         }
 
-        // Check if user already exists
-        if (userDAO.findByUsername(username) != null) {
+        // Check if user already exists (check both storages)
+        if (fileUserDAO.findByUsername(username) != null || jdbcUserDAO.findByUsername(username) != null) {
             return null; // Username already taken
         }
 
@@ -87,8 +94,20 @@ public class AuthService {
             String encryptedPrivateKeyBase64 = Base64.getEncoder().encodeToString(combined);
             user.setPrivateKeyEncrypted(encryptedPrivateKeyBase64);
 
-            // Save user to file
-            userDAO.save(user);
+            // Save to BOTH storage backends for redundancy
+            fileUserDAO.save(user); // JSON file backup
+            try {
+                jdbcUserDAO.save(user); // PostgreSQL database
+                System.out.println("[Dual Storage] User saved to both File and Database");
+            } catch (Exception e) {
+                System.err.println("[Warning] Failed to save to database: " + e.getMessage());
+                // Continue - file storage succeeded
+            }
+
+            // Log registration to ledger
+            String dataHash = HashUtil.sha256("REGISTER:" + username + ":" + publicKeyBase64);
+            ThreadManager
+                    .runAsync(() -> ledgerService.appendBlock(user.getId(), username, "USER_REGISTERED", dataHash));
 
             return user;
         } catch (Exception e) {
@@ -110,8 +129,25 @@ public class AuthService {
         }
 
         try {
-            // Find user
-            User user = userDAO.findByUsername(username);
+            // Try JDBC first (faster indexed lookup), fallback to File
+            User user = null;
+            try {
+                user = jdbcUserDAO.findByUsername(username);
+                if (user != null) {
+                    System.out.println("[Dual Storage] User loaded from Database");
+                }
+            } catch (Exception e) {
+                System.out.println("[Dual Storage] Database unavailable, using File storage");
+            }
+
+            // Fallback to file storage
+            if (user == null) {
+                user = fileUserDAO.findByUsername(username);
+                if (user != null) {
+                    System.out.println("[Dual Storage] User loaded from File");
+                }
+            }
+
             if (user == null) {
                 return false;
             }
@@ -147,6 +183,12 @@ public class AuthService {
             // Set session
             this.currentUser = user;
             this.currentUserPrivateKey = privateKey;
+
+            // Log successful login to ledger
+            final long userId = user.getId();
+            final String usernameForLog = username;
+            String dataHash = HashUtil.sha256("LOGIN:" + username + ":" + System.currentTimeMillis());
+            ThreadManager.runAsync(() -> ledgerService.appendBlock(userId, usernameForLog, "USER_LOGIN", dataHash));
 
             return true;
         } catch (Exception e) {
@@ -194,5 +236,61 @@ public class AuthService {
         java.security.spec.X509EncodedKeySpec keySpec = new java.security.spec.X509EncodedKeySpec(publicKeyBytes);
         java.security.KeyFactory keyFactory = java.security.KeyFactory.getInstance("RSA");
         return keyFactory.generatePublic(keySpec);
+    }
+
+    /**
+     * Get a user's public key by username.
+     * Used for encrypting credentials for that user.
+     * 
+     * @param username Username to get public key for
+     * @return PublicKey or null if user not found
+     */
+    public PublicKey getUserPublicKey(String username) {
+        try {
+            // Try current user first
+            if (currentUser != null && currentUser.getUsername().equals(username)) {
+                return getCurrentUserPublicKey();
+            }
+
+            // Load user from storage
+            User user = null;
+            try {
+                user = jdbcUserDAO.findByUsername(username);
+            } catch (Exception e) {
+                // Fallback to file
+            }
+            if (user == null) {
+                user = fileUserDAO.findByUsername(username);
+            }
+
+            if (user == null) {
+                return null;
+            }
+
+            byte[] publicKeyBytes = Base64.getDecoder().decode(user.getPublicKey());
+            java.security.spec.X509EncodedKeySpec keySpec = new java.security.spec.X509EncodedKeySpec(publicKeyBytes);
+            java.security.KeyFactory keyFactory = java.security.KeyFactory.getInstance("RSA");
+            return keyFactory.generatePublic(keySpec);
+
+        } catch (Exception e) {
+            System.err.println("Failed to load public key for user " + username + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Get a user's private key by username.
+     * SECURITY: This should only return the current logged-in user's private key.
+     * 
+     * @param username Username to get private key for
+     * @return PrivateKey or null if not current user or not found
+     */
+    public PrivateKey getUserPrivateKey(String username) {
+        // Security check: only return private key for current logged-in user
+        if (currentUser == null || !currentUser.getUsername().equals(username)) {
+            System.err.println("Security violation: attempted to access private key for user " + username);
+            return null;
+        }
+        return currentUserPrivateKey;
     }
 }

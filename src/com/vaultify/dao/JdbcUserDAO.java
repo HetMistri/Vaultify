@@ -1,15 +1,20 @@
 package com.vaultify.dao;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+
 import com.vaultify.db.Database;
 import com.vaultify.models.User;
-import java.sql.*;
 
 public class JdbcUserDAO {
 
     public void save(User user) {
         String sql = "INSERT INTO users (username, password_hash, public_key, private_key_encrypted, created_at) VALUES (?, ?, ?, ?, ?)";
         try (Connection conn = Database.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+                PreparedStatement pstmt = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
             pstmt.setString(1, user.getUsername());
             pstmt.setString(2, user.getPasswordHash());
@@ -34,7 +39,7 @@ public class JdbcUserDAO {
     public User findByUsername(String username) {
         String sql = "SELECT * FROM users WHERE username = ?";
         try (Connection conn = Database.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                PreparedStatement pstmt = conn.prepareStatement(sql)) {
 
             pstmt.setString(1, username);
             try (ResultSet rs = pstmt.executeQuery()) {
@@ -50,7 +55,7 @@ public class JdbcUserDAO {
                 }
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            System.err.println("Database error while finding user: " + e.getMessage());
         }
         return null; // Not found
     }
