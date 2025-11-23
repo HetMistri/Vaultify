@@ -1,12 +1,23 @@
 package com.vaultify.cli;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.PublicKey;
+import java.util.List;
 import java.util.Scanner;
 
+import com.vaultify.models.CredentialMetadata;
+import com.vaultify.models.Token;
 import com.vaultify.models.User;
 import com.vaultify.service.AuthService;
+import com.vaultify.service.LedgerService;
+import com.vaultify.service.TokenService;
+import com.vaultify.service.VaultService;
 import com.vaultify.service.VerificationService;
+import com.vaultify.util.Config;
+import com.vaultify.util.PathValidator;
 import com.vaultify.verifier.CertificateVerifier;
 
 /**
@@ -18,6 +29,9 @@ public class CommandRouter {
     // Services
     private static final AuthService authService = new AuthService();
     private static final VerificationService verificationService = new VerificationService();
+    private static final VaultService vaultService = new VaultService();
+    private static final TokenService tokenService = new TokenService();
+    private static final LedgerService ledgerService = new LedgerService();
 
     // -------------------------
     // Instance entrypoint used by VaultifyApplication
@@ -44,10 +58,10 @@ public class CommandRouter {
             case "logout" -> logout();
             case "whoami" -> whoami();
             case "vault" -> vault(scanner);
-            case "verify" -> verifyToken(scanner);
+            case "revoke-token" -> revokeToken(scanner);
+            case "list-tokens" -> listTokens();
             case "verify-ledger" -> verifyLedger();
-            case "share" -> share(scanner);
-            case "verify-cert" -> verifyCertificate(scanner);
+            case "test-ledger" -> testLedgerConnection();
             case "test-db" -> testDatabaseConnection();
             case "help" -> printHelp();
             case "exit" -> {
@@ -143,6 +157,7 @@ public class CommandRouter {
         User user = authService.getCurrentUser();
         System.out.println("Logged in as: " + user.getUsername());
         System.out.println("User ID: " + user.getId());
+        System.out.println("User Public Key:\n" + user.getPublicKey());
     }
 
     // ---------------------------
@@ -160,37 +175,48 @@ public class CommandRouter {
             if (line.isEmpty())
                 continue;
 
-            String[] parts = line.split("\\s+", 2);
+            String[] parts = line.split("\\s+");
             String cmd = parts[0].toLowerCase();
-            String arg = parts.length > 1 ? parts[1].trim() : "";
 
             switch (cmd) {
                 case "help" -> printVaultHelp();
                 case "add" -> {
-                    String name = arg;
-                    if (name.isEmpty()) {
-                        System.out.print("Enter credential name: ");
-                        name = scanner.nextLine().trim();
+                    System.out.println("Add credential:");
+                    System.out.println("  1. File");
+                    System.out.println("  2. Text/Password");
+                    System.out.print("Choice [1-2]: ");
+                    String choice = scanner.nextLine().trim();
+                    switch (choice) {
+                        case "1" -> {
+                            System.out.print("Enter file path: ");
+                            String filePath = scanner.nextLine().trim();
+                            addCredentialFromFile(filePath, scanner);
+                        }
+                        case "2" -> addCredentialFromText(scanner);
+                        default -> System.out.println("Invalid choice.");
                     }
-                    addCredential(name);
                 }
                 case "list" -> listCredentials();
                 case "view" -> {
-                    String id = arg;
-                    if (id.isEmpty()) {
+                    String id = parts.length > 1 ? parts[1] : null;
+                    if (id == null || id.isEmpty()) {
                         System.out.print("Enter credential id to view: ");
                         id = scanner.nextLine().trim();
                     }
-                    viewCredential(id);
+                    viewCredential(id, scanner);
                 }
+                case "share" -> shareCredential(scanner);
                 case "delete" -> {
-                    String id = arg;
-                    if (id.isEmpty()) {
+                    String id = parts.length > 1 ? parts[1] : null;
+                    if (id == null || id.isEmpty()) {
                         System.out.print("Enter credential id to delete: ");
                         id = scanner.nextLine().trim();
                     }
                     deleteCredential(id);
                 }
+
+                case "verify-cert" -> verifyCertificate(scanner);
+
                 case "back" -> {
                     System.out.println("Exiting Vault subsystem.");
                     return;
@@ -202,35 +228,183 @@ public class CommandRouter {
 
     private static void printVaultHelp() {
         System.out.println("Vault commands:");
-        System.out.println("  add [name]     - add a new credential");
-        System.out.println("  list           - list stored credentials");
-        System.out.println("  view <id>      - view credential details");
-        System.out.println("  delete <id>    - delete a credential");
-        System.out.println("  back           - return to top-level CLI");
+        System.out.println("  add                   - add credential (interactive)");
+        System.out.println("  add --file <path>     - add credential from file");
+        System.out.println("  add --text            - add text/password credential");
+        System.out.println("  list                  - list stored credentials");
+        System.out.println("  view <id>             - view credential details");
+        System.out.println("  delete <id>           - delete a credential");
+        System.out.println("  back                  - return to top-level CLI");
     }
 
-    private static void addCredential(String name) {
-        if (name == null || name.isEmpty()) {
-            System.out.println("Credential name cannot be empty.");
-            return;
+    private static void addCredentialFromFile(String filePath, Scanner scanner) {
+        try {
+            // Validate file path
+            PathValidator.ValidationResult validation = PathValidator.validateFilePath(filePath);
+            if (!validation.valid) {
+                System.out.println("✗ Validation failed: " + validation.message);
+                return;
+            }
+
+            // Get user's public key
+            User user = authService.getCurrentUser();
+            PublicKey publicKey = authService.getUserPublicKey(user.getUsername());
+            if (publicKey == null) {
+                System.out.println("✗ Failed to load user's public key.");
+                return;
+            }
+
+            // Show file info
+            long fileSize = Files.size(validation.normalizedPath);
+            System.out.println("\nFile: " + validation.normalizedPath.getFileName());
+            System.out.println("Size: " + PathValidator.formatSize(fileSize));
+            System.out.print("\nEncrypt and store this file? [y/N]: ");
+            String confirm = scanner.nextLine().trim().toLowerCase();
+            if (!confirm.equals("y") && !confirm.equals("yes")) {
+                System.out.println("Cancelled.");
+                return;
+            }
+
+            // Add credential
+            String credentialId = vaultService.addCredential(user.getId(), validation.normalizedPath, publicKey);
+            System.out.println("\n✓ Credential added successfully!");
+            System.out.println("  ID: " + credentialId);
+
+        } catch (Exception e) {
+            System.out.println("✗ Failed to add credential: " + e.getMessage());
+            System.err.println("Error: Could not encrypt or store the file. Please check file permissions.");
         }
-        // TODO: Integrate with VaultService when vault commands are fully wired
-        System.out.println("Credential vault operations will be integrated with VaultService.");
-        System.out.println("VaultService is ready - CLI wiring pending.");
+    }
+
+    private static void addCredentialFromText(Scanner scanner) {
+        try {
+            System.out.println("\nEnter credential text (press Ctrl+D or Ctrl+Z when done):");
+            System.out.println("Examples:");
+            System.out.println("  - Password format: username: xyz, app/site: example.com, password: xyz123");
+            System.out.println("  - Simple text: Any text you want to encrypt\n");
+
+            StringBuilder text = new StringBuilder();
+            System.out.print("> ");
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine();
+                // Check for end marker (empty line after content)
+                if (line.equals("--end") || line.equals(".")) {
+                    break;
+                }
+                if (!text.isEmpty()) {
+                    text.append("\n");
+                }
+                text.append(line);
+
+                // Single line mode - if line is not empty and we have content, ask if done
+                if (!text.isEmpty()) {
+                    System.out.print("Continue? [y/N] or type '--end' to finish: ");
+                    String cont = scanner.nextLine().trim().toLowerCase();
+                    if (!cont.equals("y") && !cont.equals("yes")) {
+                        if (cont.equals("--end") || cont.equals(".")) {
+                            break;
+                        }
+                        // User wants to finish with current content
+                        break;
+                    }
+                    System.out.print("> ");
+                }
+            }
+
+            if (text.isEmpty()) {
+                System.out.println("No text entered.");
+                return;
+            }
+
+            // Create temporary file
+            Path tempFile = Files.createTempFile("vaultify-text-", ".txt");
+            Files.writeString(tempFile, text.toString());
+
+            // Get user's public key
+            User user = authService.getCurrentUser();
+            PublicKey publicKey = authService.getUserPublicKey(user.getUsername());
+            if (publicKey == null) {
+                System.out.println("✗ Failed to load user's public key.");
+                Files.deleteIfExists(tempFile);
+                return;
+            }
+
+            // Add credential
+            String credentialId = vaultService.addCredential(user.getId(), tempFile, publicKey);
+
+            // Clean up temp file
+            Files.deleteIfExists(tempFile);
+
+            System.out.println("\n✓ Text credential added successfully!");
+            System.out.println("  ID: " + credentialId);
+
+        } catch (Exception e) {
+            System.out.println("✗ Failed to add text credential: " + e.getMessage());
+            System.err.println("Error: Could not encrypt or store the text. Please try again.");
+        }
     }
 
     private static void listCredentials() {
-        // TODO: Integrate with VaultService
-        System.out.println("Credential listing will be integrated with VaultService.");
+        try {
+            User user = authService.getCurrentUser();
+            List<CredentialMetadata> credentials = vaultService.listCredentials(user.getId());
+
+            if (credentials.isEmpty()) {
+                System.out.println("No credentials stored.");
+                return;
+            }
+
+            System.out.println("\n=== Your Credentials ===");
+            for (CredentialMetadata meta : credentials) {
+                System.out.println("\nID: " + meta.credentialIdString);
+                System.out.println("  File: " + meta.filename);
+                System.out.println("  Size: " + PathValidator.formatSize(meta.fileSize));
+                System.out.println("  Added: " + new java.util.Date(meta.timestamp));
+            }
+            System.out.println("\nTotal: " + credentials.size() + " credential(s)");
+
+        } catch (Exception e) {
+            System.out.println("✗ Failed to list credentials: " + e.getMessage());
+        }
     }
 
-    private static void viewCredential(String id) {
+    private static void viewCredential(String id, Scanner scanner) {
         if (id == null || id.isEmpty()) {
             System.out.println("Invalid credential id.");
             return;
         }
-        // TODO: Integrate with VaultService
-        System.out.println("Credential retrieval will be integrated with VaultService.");
+
+        try {
+            User user = authService.getCurrentUser();
+
+            // Get user's private key
+            java.security.PrivateKey privateKey = authService.getUserPrivateKey(user.getUsername());
+            if (privateKey == null) {
+                System.out.println("✗ Failed to load user's private key.");
+                return;
+            }
+
+            // Retrieve and decrypt
+            byte[] plaintext = vaultService.retrieveCredential(id, privateKey);
+
+            // Display as text (assuming text content)
+            System.out.println("\n=== Credential Content ===");
+            System.out.println(new String(plaintext, StandardCharsets.UTF_8));
+            System.out.println("\n==========================");
+
+            // Ask if user wants to save to file
+            System.out.print("\nSave to file? [y/N]: ");
+            String save = scanner.nextLine().trim().toLowerCase();
+            if (save.equals("y") || save.equals("yes")) {
+                System.out.print("Output file path: ");
+                String outPath = scanner.nextLine().trim();
+                Files.write(Paths.get(outPath), plaintext);
+                System.out.println("✓ Saved to: " + outPath);
+            }
+
+        } catch (Exception e) {
+            System.out.println("✗ Failed to retrieve credential: " + e.getMessage());
+        }
     }
 
     private static void deleteCredential(String id) {
@@ -238,66 +412,183 @@ public class CommandRouter {
             System.out.println("Invalid credential id.");
             return;
         }
-        // TODO: Integrate with VaultService
-        System.out.println("Credential deletion will be integrated with VaultService.");
-    }
 
-    // ---------------------------
-    // verify token (placeholder)
-    // ---------------------------
-    private static void verifyToken(Scanner scanner) {
-        System.out.print("Enter share token: ");
-        String token = scanner.nextLine().trim();
-
-        System.out.print("Enter certificate path: ");
-        String certPath = scanner.nextLine().trim();
-
-        System.out.println("Verification subsystem not implemented in this demo.");
-        System.out.println("Received token: " + token + " and certPath: " + certPath);
-    }
-
-    // ---------------------------
-    // verify-ledger (placeholder)
-    // ---------------------------
-    private static void verifyLedger() {
-        System.out.println("Ledger verification not implemented in this demo.");
-    }
-
-    // ---------------------------
-    // share
-    // ---------------------------
-    private static void share(Scanner scanner) {
         try {
-            System.out.print("Enter issuer user ID: ");
-            String userIdStr = scanner.nextLine().trim();
-            long userId = Long.parseLong(userIdStr);
+            User user = authService.getCurrentUser();
+            vaultService.deleteCredential(id, user.getId());
+            System.out.println("✓ Credential deleted: " + id);
 
-            System.out.print("Enter credential ID: ");
-            String credentialIdStr = scanner.nextLine().trim();
-            long credentialId = Long.parseLong(credentialIdStr);
+        } catch (Exception e) {
+            System.out.println("✗ Failed to delete credential: " + e.getMessage());
+        }
+    }
 
-            System.out.print("Enter issuer PRIVATE key path: ");
-            String privPath = scanner.nextLine().trim();
+    // ---------------------------
+    // share - Generate token and certificate for credential sharing
+    // ---------------------------
+    private static void shareCredential(Scanner scanner) {
+        if (!authService.isLoggedIn()) {
+            System.out.println("Please login first.");
+            return;
+        }
+
+        try {
+            User user = authService.getCurrentUser();
+
+            // Get credential ID to share
+            System.out.print("Enter credential ID to share: ");
+            String credentialId = scanner.nextLine().trim();
+
+            // Validate credential exists and belongs to user
+            List<CredentialMetadata> userCreds = vaultService.listCredentials(user.getId());
+            CredentialMetadata cred = userCreds.stream()
+                    .filter(c -> c.credentialIdString.equals(credentialId))
+                    .findFirst()
+                    .orElse(null);
+
+            if (cred == null) {
+                System.out.println("✗ Credential not found or you don't own it.");
+                return;
+            }
 
             System.out.print("Expiry in hours (default 48): ");
             String exp = scanner.nextLine().trim();
             int expiryHours = exp.isEmpty() ? 48 : Integer.parseInt(exp);
 
-            Path privateKeyPath = Paths.get(privPath);
+            // Generate token (not yet persisted) then persist
+            // Use credential ID or hash of UUID string as numeric reference
+            long credIdNum = (cred.id != 0) ? cred.id : Math.abs(cred.credentialIdString.hashCode());
+            Token token = tokenService.generateToken(user.getId(), credIdNum, expiryHours);
+            tokenService.persistToken(token);
 
-            Path certPath = verificationService.generateShareToken(
-                    userId,
-                    credentialId,
-                    privateKeyPath,
-                    expiryHours);
+            // Get user's private key for signing certificate
+            java.security.PrivateKey privateKey = authService.getUserPrivateKey(user.getUsername());
+            if (privateKey == null) {
+                System.out.println("✗ Failed to load your private key.");
+                return;
+            }
 
-            System.out.println("Certificate generated at:");
-            System.out.println(certPath.toAbsolutePath());
+            // Get user's public key path for certificate
+            Path publicKeyPath = Paths.get("vault_data/keys/" + user.getUsername() + "_public.pem");
+            if (!Files.exists(publicKeyPath)) {
+                System.out.println("✗ Public key not found: " + publicKeyPath);
+                return;
+            }
+
+            // Generate certificate
+            Path certOutputDir = Paths.get("vault_data/certificates");
+            Files.createDirectories(certOutputDir);
+            String tokenHash = com.vaultify.crypto.HashUtil.sha256(token.getToken());
+            Path certPath = certOutputDir.resolve("cert-" + tokenHash.substring(0, 16) + ".json");
+
+            tokenService.createCertificate(token, cred, privateKey, publicKeyPath, certPath);
+
+            System.out.println("\n✅ Share token and certificate generated!");
+            System.out.println("===========================================");
+            System.out.println("📤 SHARE THESE WITH RECIPIENT:");
+            System.out.println("   1. Token: " + token.getToken());
+            System.out.println("   2. Certificate: " + certPath.toAbsolutePath());
+            System.out.println("===========================================");
+            System.out.println("📋 Details:");
+            System.out.println("   Credential ID: " + cred.credentialIdString);
+            System.out.println("   Token Hash: " + tokenHash);
+            System.out.println("   Expires: " + new java.util.Date(token.getExpiry().getTime()));
+            System.out.println("===========================================");
+            System.out.println("\n⚠️  SECURITY NOTES:");
+            System.out.println("   • Token is sent ONCE to recipient (confidential)");
+            System.out.println("   • Certificate is publicly verifiable");
+            System.out.println("   • Only tokenHash stored on ledger server");
+            System.out.println("===========================================\n");
 
         } catch (NumberFormatException nfe) {
-            System.out.println("Invalid numeric input. Please enter numeric user ID and credential ID.");
+            System.out.println("✗ Invalid numeric input.");
         } catch (Exception e) {
-            System.out.println("Error generating share token: " + e.getMessage());
+            System.out.println("✗ Error generating share token: " + e.getMessage());
+        }
+    }
+
+    // ---------------------------
+    // revoke-token
+    // ---------------------------
+    private static void revokeToken(Scanner scanner) {
+        if (!authService.isLoggedIn()) {
+            System.out.println("Please login first.");
+            return;
+        }
+
+        try {
+            System.out.print("Enter token to revoke: ");
+            String tokenString = scanner.nextLine().trim();
+
+            // Validate token exists and belongs to user
+            Token token = tokenService.validateToken(tokenString);
+            if (token == null) {
+                System.out.println("✗ Token not found or already expired.");
+                return;
+            }
+
+            User user = authService.getCurrentUser();
+            if (token.getIssuerUserId() != user.getId()) {
+                System.out.println("✗ You can only revoke tokens you issued.");
+                return;
+            }
+
+            tokenService.revokeToken(tokenString);
+
+        } catch (Exception e) {
+            System.out.println("✗ Error revoking token: " + e.getMessage());
+        }
+    }
+
+    // ---------------------------
+    // list-tokens
+    // ---------------------------
+    private static void listTokens() {
+        if (!authService.isLoggedIn()) {
+            System.out.println("Please login first.");
+            return;
+        }
+
+        try {
+            User user = authService.getCurrentUser();
+            List<Token> tokens = tokenService.listUserTokens(user.getId());
+
+            if (tokens.isEmpty()) {
+                System.out.println("No tokens generated.");
+                return;
+            }
+
+            System.out.println("\n=== Your Generated Tokens ===");
+            for (Token t : tokens) {
+                System.out.println("\nToken: " + t.getToken());
+                System.out.println("  Credential ID: " + t.getCredentialId());
+                System.out.println("  Expires: " + t.getExpiry());
+                System.out.println(
+                        "  Status: " + (t.isValid() ? "✓ Valid" : (t.isRevoked() ? "✗ Revoked" : "✗ Expired")));
+            }
+            System.out.println("\nTotal: " + tokens.size() + " token(s)");
+
+        } catch (Exception e) {
+            System.out.println("✗ Error listing tokens: " + e.getMessage());
+        }
+    }
+
+    // ---------------------------
+    // verify-ledger
+    // ---------------------------
+    private static void verifyLedger() {
+        try {
+            List<String> errors = ledgerService.verifyIntegrity();
+
+            if (errors.isEmpty()) {
+                System.out.println("✓ Ledger integrity verified - no issues found");
+                System.out.println("  Total blocks: " + ledgerService.getChain().size());
+            } else {
+                System.out.println("✗ Ledger integrity check FAILED:");
+                errors.forEach(err -> System.out.println("  - " + err));
+            }
+        } catch (Exception e) {
+            System.out.println("✗ Verification error: " + e.getMessage());
         }
     }
 
@@ -309,18 +600,18 @@ public class CommandRouter {
             System.out.print("Enter certificate path: ");
             Path certPath = Paths.get(scanner.nextLine().trim());
 
-            System.out.print("Enter issuer PUBLIC key path: ");
-            Path pubPath = Paths.get(scanner.nextLine().trim());
+            System.out.print("Enter token (the one User A gave you): ");
+            String token = scanner.nextLine().trim();
 
-            CertificateVerifier.Result res = verificationService.verifyCertificate(certPath, pubPath);
+            CertificateVerifier.Result res = verificationService.verifyCertificate(certPath, token);
 
-            System.out.println("\n=== Verification Result ===");
-            System.out.println("Valid: " + res.valid);
-            System.out.println("Message: " + res.message);
-            System.out.println("===========================");
+            if (!res.valid) {
+                System.out.println("\n❌ Verification failed: " + res.message);
+            }
+            // Success message already printed by verifier
 
         } catch (Exception e) {
-            System.out.println("Error verifying certificate: " + e.getMessage());
+            System.out.println("\n✗ Error verifying certificate: " + e.getMessage());
         }
     }
 
@@ -338,7 +629,7 @@ public class CommandRouter {
 
             // List all tables in the database
             System.out.println("\n=== Available Tables ===");
-            try (java.sql.ResultSet rs = conn.getMetaData().getTables(null, "public", "%", new String[] { "TABLE" })) {
+            try (java.sql.ResultSet rs = conn.getMetaData().getTables(null, "public", "%", new String[]{"TABLE"})) {
                 boolean foundTables = false;
                 while (rs.next()) {
                     String tableName = rs.getString("TABLE_NAME");
@@ -353,7 +644,7 @@ public class CommandRouter {
 
             // Describe each expected table and validate schema
             System.out.println("\n=== Table Schemas ===");
-            String[] expectedTables = { "users", "credentials", "tokens" };
+            String[] expectedTables = {"users", "credentials", "tokens"};
             boolean schemaValid = true;
 
             for (String table : expectedTables) {
@@ -402,9 +693,52 @@ public class CommandRouter {
             System.out.println("  Error: " + e.getMessage());
         }
         System.out.println("================================\n");
-    } // ---------------------------
-      // help
-      // ---------------------------
+    }
+
+    // ---------------------------
+    // test-ledger
+    // ---------------------------
+    private static void testLedgerConnection() {
+        System.out.println("\n================================");
+        System.out.println("Testing Ledger Server Connection");
+        System.out.println("================================");
+
+        System.out.print("Checking server availability... ");
+        boolean available = com.vaultify.client.LedgerClient.isServerAvailable();
+
+        if (available) {
+            System.out.println("✓ Connected!");
+            System.out.println("\nFetching ledger statistics...");
+
+            java.util.List<com.vaultify.models.LedgerBlock> blocks = com.vaultify.client.LedgerClient.getAllBlocks();
+            System.out.println("✓ Total blocks: " + blocks.size());
+
+            if (!blocks.isEmpty()) {
+                com.vaultify.models.LedgerBlock latest = blocks.get(blocks.size() - 1);
+                System.out.println("✓ Latest block index: " + latest.getIndex());
+                System.out.println("✓ Latest block action: " + latest.getAction());
+            }
+
+            System.out.print("\nVerifying chain integrity... ");
+            boolean valid = com.vaultify.client.LedgerClient.verifyLedgerIntegrity();
+            if (valid) {
+                System.out.println("✓ Valid");
+            } else {
+                System.out.println("✗ Invalid");
+            }
+        } else {
+            System.out.println("✗ Not available");
+            System.out.println("\n⚠ Make sure the ledger server is running:");
+            System.out.println("  cd ledger-server");
+            System.out.println("  npm start");
+        }
+
+        System.out.println("================================\n");
+    }
+
+    // ---------------------------
+    // help
+    // ---------------------------
 
     private static void printHelp() {
         System.out.println("Available commands:");
@@ -412,12 +746,14 @@ public class CommandRouter {
         System.out.println("  login          - login with username/password");
         System.out.println("  logout         - logout current user");
         System.out.println("  whoami         - show current logged-in user");
-        System.out.println("  vault          - vault operations (add/list/view/delete)");
-        System.out.println("  share          - generate a share token + signed certificate");
-        System.out.println("  verify         - verify shared token (placeholder)");
-        System.out.println("  verify-ledger  - verify ledger (placeholder)");
-        System.out.println("  verify-cert    - verify a certificate file");
-        System.out.println("  test-db        - test database connection and query");
+        System.out.println("  vault          - vault operations (add/list/view/delete credentials)");
+        System.out.println("  share          - generate share token + signed certificate for credential");
+        System.out.println("  verify-cert    - verify a certificate file with public key");
+        System.out.println("  revoke-token   - revoke a previously generated token");
+        System.out.println("  list-tokens    - list all tokens you've generated");
+        System.out.println("  verify-ledger  - verify integrity of the blockchain ledger");
+        System.out.println("  test-ledger    - test connection to remote ledger server");
+        System.out.println("  test-db        - test database connection and schema");
         System.out.println("  help           - show this help");
         System.out.println("  exit           - quit CLI");
     }

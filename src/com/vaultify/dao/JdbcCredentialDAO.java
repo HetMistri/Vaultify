@@ -1,26 +1,32 @@
 package com.vaultify.dao;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.List;
+
 import com.vaultify.db.Database;
 import com.vaultify.models.CredentialMetadata;
 import com.vaultify.models.CredentialType;
-import java.sql.*;
-import java.util.ArrayList;
-import java.util.List;
 
 public class JdbcCredentialDAO {
 
     public void save(CredentialMetadata meta, long userId) {
-        String sql = "INSERT INTO credentials (user_id, filename, filepath, metadata, created_at) VALUES (?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO credentials (user_id, filename, filepath, encrypted_key, iv, data_hash, file_size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = Database.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                PreparedStatement pstmt = conn.prepareStatement(sql)) {
 
             pstmt.setLong(1, userId);
             pstmt.setString(2, meta.filename);
-            // Store the relative path to the encrypted bin file
             pstmt.setString(3, "vault_data/credentials/" + meta.credentialIdString + ".bin");
-            // Store the rest of the metadata (hash, size) as a JSON string or text
-            pstmt.setString(4, "hash:" + meta.dataHash + ";size:" + meta.fileSize);
-            pstmt.setTimestamp(5, new Timestamp(meta.timestamp));
+            pstmt.setString(4, meta.encryptedKeyBase64);
+            pstmt.setString(5, meta.ivBase64);
+            pstmt.setString(6, meta.dataHash);
+            pstmt.setLong(7, meta.fileSize);
+            pstmt.setTimestamp(8, new Timestamp(meta.timestamp));
 
             pstmt.executeUpdate();
 
@@ -34,7 +40,7 @@ public class JdbcCredentialDAO {
         String sql = "SELECT * FROM credentials WHERE user_id = ?";
 
         try (Connection conn = Database.getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                PreparedStatement pstmt = conn.prepareStatement(sql)) {
 
             pstmt.setLong(1, userId);
             try (ResultSet rs = pstmt.executeQuery()) {
@@ -42,29 +48,37 @@ public class JdbcCredentialDAO {
                     CredentialMetadata meta = new CredentialMetadata();
                     // Extract ID from filepath for consistency with FileDAO
                     String path = rs.getString("filepath");
-                    // e.g. "vault_data/credentials/abc-123.bin" -> "abc-123"
                     String filename = new java.io.File(path).getName();
                     meta.credentialIdString = filename.replace(".bin", "");
 
                     meta.filename = rs.getString("filename");
                     meta.timestamp = rs.getTimestamp("created_at").getTime();
                     meta.type = CredentialType.FILE;
+                    meta.userId = userId;
 
-                    // Parse simple metadata string "hash:xyz;size:123"
-                    String metaStr = rs.getString("metadata");
-                    if (metaStr != null) {
-                        String[] parts = metaStr.split(";");
-                        for (String p : parts) {
-                            if (p.startsWith("size:")) meta.fileSize = Long.parseLong(p.split(":")[1]);
-                            if (p.startsWith("hash:")) meta.dataHash = p.split(":")[1];
-                        }
-                    }
+                    // Retrieve encryption fields
+                    meta.encryptedKeyBase64 = rs.getString("encrypted_key");
+                    meta.ivBase64 = rs.getString("iv");
+                    meta.dataHash = rs.getString("data_hash");
+                    meta.fileSize = rs.getLong("file_size");
+
                     list.add(meta);
                 }
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            System.err.println("Database error while finding credentials: " + e.getMessage());
         }
         return list;
+    }
+
+    public void delete(String credentialId) {
+        String sql = "DELETE FROM credentials WHERE filepath = ?";
+        try (Connection conn = Database.getConnection();
+                PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, "vault_data/credentials/" + credentialId + ".bin");
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            throw new RuntimeException("Error deleting credential from DB", e);
+        }
     }
 }

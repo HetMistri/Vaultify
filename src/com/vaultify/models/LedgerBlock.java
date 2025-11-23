@@ -1,14 +1,16 @@
-package com.vaultify.ledger;
+package com.vaultify.models;
 
+/**
+ * Ledger block data model (matches server response structure)
+ */
 public class LedgerBlock {
     private int index;
     private long timestamp;
-    private String action;    // e.g. "ADD_CREDENTIAL", "DELETE_CREDENTIAL", "GENERATE_TOKEN"
-    private String dataHash;  // hash of the data this block refers to (credential id, token, metadata)
+    private String action;
+    private String dataHash;
     private String prevHash;
-    private String hash;      // hash over (index + timestamp + action + dataHash + prevHash)
+    private String hash;
 
-    // Required by Gson
     public LedgerBlock() {
     }
 
