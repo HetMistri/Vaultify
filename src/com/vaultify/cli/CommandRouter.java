@@ -1,13 +1,16 @@
 package com.vaultify.cli;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.PublicKey;
-import java.util.List;
-import java.util.Scanner;
-
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.*;
 import com.vaultify.models.CredentialMetadata;
 import com.vaultify.models.Token;
 import com.vaultify.models.User;
@@ -23,6 +26,10 @@ import com.vaultify.verifier.CertificateVerifier;
 /**
  * CommandRouter for Vaultify CLI.
  * Handles user commands with real authentication and session management.
+ *
+ * Extended: stats, health, reconcile/drift-report (non-destructive)
+ *
+ * Note: reconciliation is read-only and conservative by design.
  */
 public class CommandRouter {
 
@@ -32,6 +39,11 @@ public class CommandRouter {
     private static final VaultService vaultService = new VaultService();
     private static final TokenService tokenService = new TokenService();
     private static final LedgerService ledgerService = new LedgerService();
+
+    // Storage paths (safe defaults matching existing code)
+    private static final Path KEYS_DIR = Paths.get("vault_data/keys");
+    private static final Path CERTS_DIR = Paths.get("vault_data/certificates");
+    private static final Path STORAGE_DIR = Paths.get("vault_data/credential");
 
     // -------------------------
     // Instance entrypoint used by VaultifyApplication
@@ -68,6 +80,12 @@ public class CommandRouter {
                 System.out.println("Exiting Vaultify CLI...");
                 System.exit(0);
             }
+
+            // New commands (non-invasive)
+            case "stats" -> showStats();
+            case "health" -> showHealth();
+            case "reconcile", "drift-report" -> reconcileAndReport(scanner);
+
             default -> System.out.println("Unknown command: " + command);
         }
     }
@@ -699,7 +717,7 @@ public class CommandRouter {
     // test-ledger
     // ---------------------------
     private static void testLedgerConnection() {
-        System.out.println("\n================================");
+        System.out.println("================================");
         System.out.println("Testing Ledger Server Connection");
         System.out.println("================================");
 
@@ -715,8 +733,13 @@ public class CommandRouter {
 
             if (!blocks.isEmpty()) {
                 com.vaultify.models.LedgerBlock latest = blocks.get(blocks.size() - 1);
-                System.out.println("✓ Latest block index: " + latest.getIndex());
-                System.out.println("✓ Latest block action: " + latest.getAction());
+                // defensive: try getIndex/getAction if available
+                try {
+                    System.out.println("✓ Latest block index: " + latest.getIndex());
+                } catch (Throwable ignored) {}
+                try {
+                    System.out.println("✓ Latest block action: " + latest.getAction());
+                } catch (Throwable ignored) {}
             }
 
             System.out.print("\nVerifying chain integrity... ");
@@ -752,7 +775,479 @@ public class CommandRouter {
         System.out.println("  verify-ledger  - verify integrity of the blockchain ledger");
         System.out.println("  test-ledger    - test connection to remote ledger server");
         System.out.println("  test-db        - test database connection and schema");
+        System.out.println("  stats          - show system stats (counts, disk usage)");
+        System.out.println("  health         - run health checks (DB, ledger, storage)");
+        System.out.println("  reconcile      - reconcile DB, stored files and ledger; produce drift report");
+        System.out.println("  drift-report   - alias for reconcile");
         System.out.println("  help           - show this help");
         System.out.println("  exit           - quit CLI");
+    }
+
+    // ---------------------------
+    // New: stats
+    // ---------------------------
+    private static void showStats() {
+        System.out.println("\n=== Vaultify Stats ===");
+        try (java.sql.Connection conn = com.vaultify.db.Database.getConnection()) {
+
+            long users = queryCount(conn, "SELECT COUNT(*) FROM users");
+            long credentials = queryCount(conn, "SELECT COUNT(*) FROM credentials");
+            long tokens = queryCount(conn, "SELECT COUNT(*) FROM tokens");
+
+            System.out.println("Users       : " + users);
+            System.out.println("Credentials : " + credentials);
+            System.out.println("Tokens      : " + tokens);
+
+        } catch (Exception e) {
+            System.out.println("✗ Could not query database: " + e.getMessage());
+        }
+
+        // Disk usage for vault_data
+        try {
+            long[] usage = directorySizeAndCount(STORAGE_DIR);
+            if (usage != null) {
+                System.out.println("\nStorage directory: " + STORAGE_DIR.toAbsolutePath());
+                System.out.println("  Files: " + usage[1]);
+                System.out.println("  Size : " + PathValidator.formatSize(usage[0]));
+            } else {
+                System.out.println("\nStorage directory not found: " + STORAGE_DIR.toAbsolutePath());
+            }
+        } catch (Exception ex) {
+            System.out.println("✗ Could not inspect storage dir: " + ex.getMessage());
+        }
+
+        // Ledger status
+        try {
+            boolean ledgerAvailable = com.vaultify.client.LedgerClient.isServerAvailable();
+            System.out.println("\nLedger server : " + (ledgerAvailable ? "✓ Available" : "✗ Not available"));
+            if (ledgerAvailable) {
+                List<com.vaultify.models.LedgerBlock> blocks = com.vaultify.client.LedgerClient.getAllBlocks();
+                System.out.println("  Blocks       : " + blocks.size());
+            }
+        } catch (Exception e) {
+            System.out.println("✗ Could not contact ledger: " + e.getMessage());
+        }
+
+        System.out.println("======================\n");
+    }
+
+    // ---------------------------
+    // New: health checks
+    // ---------------------------
+    private static void showHealth() {
+        System.out.println("\n=== Vaultify Health Check ===");
+
+        // DB
+        System.out.print("Database: ");
+        try (java.sql.Connection conn = com.vaultify.db.Database.getConnection()) {
+            if (conn != null && !conn.isClosed()) {
+                System.out.println("✓ OK (" + conn.getMetaData().getURL() + ")");
+            } else {
+                System.out.println("✗ Failed to open connection");
+            }
+        } catch (SQLException e) {
+            System.out.println("✗ ERROR - " + e.getMessage());
+        }
+
+        // Ledger
+        System.out.print("Ledger Server: ");
+        try {
+            boolean ledgerOk = com.vaultify.client.LedgerClient.isServerAvailable();
+            System.out.println(ledgerOk ? "✓ OK" : "✗ Not reachable");
+        } catch (Exception e) {
+            System.out.println("✗ ERROR - " + e.getMessage());
+        }
+
+        // Storage dirs and permissions
+        System.out.print("Storage dir (read/write): ");
+        Path storage = STORAGE_DIR;
+        try {
+            if (!Files.exists(storage)) {
+                System.out.println("✗ Missing (" + storage.toAbsolutePath() + ")");
+            } else {
+                boolean r = Files.isReadable(storage);
+                boolean w = Files.isWritable(storage);
+                System.out.println((r && w) ? "✓ OK" : "✗ Permissions issue (r:" + r + " w:" + w + ")");
+            }
+        } catch (Exception e) {
+            System.out.println("✗ ERROR - " + e.getMessage());
+        }
+
+        System.out.print("Keys dir: ");
+        try {
+            if (!Files.exists(KEYS_DIR)) {
+                System.out.println("✗ Missing (" + KEYS_DIR.toAbsolutePath() + ")");
+            } else {
+                System.out.println("✓ OK (" + KEYS_DIR.toAbsolutePath() + ")");
+            }
+        } catch (Exception e) {
+            System.out.println("✗ ERROR - " + e.getMessage());
+        }
+
+        // Quick verification: can we read an example public key if any user exists?
+        try {
+            long userCount = queryCount(com.vaultify.db.Database.getConnection(), "SELECT COUNT(*) FROM users");
+            System.out.print("Public keys present for users: ");
+            if (userCount == 0) {
+                System.out.println("⚠ No users found");
+            } else {
+                boolean anyKey = false;
+                try (java.sql.Connection c = com.vaultify.db.Database.getConnection();
+                     PreparedStatement ps = c.prepareStatement("SELECT public_key FROM users WHERE public_key IS NOT NULL LIMIT 1");
+                     ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        String pk = rs.getString(1);
+                        if (pk != null && !pk.trim().isEmpty()) {
+                            anyKey = true;
+                        }
+                    }
+                }
+                System.out.println(anyKey ? "✓ Found" : "✗ Missing");
+            }
+        } catch (SQLException e) {
+            System.out.println("✗ ERROR - " + e.getMessage());
+        } catch (Exception e) {
+            // ignore
+        }
+
+        System.out.println("================================\n");
+    }
+
+    // ---------------------------
+    // New: reconcile & drift reporting (read-only)
+    // ---------------------------
+    private static void reconcileAndReport(Scanner scanner) {
+        System.out.println("\n=== Reconciliation & Drift Report ===");
+        System.out.println("This operation will inspect:");
+        System.out.println("  - DB 'credentials' table entries");
+        System.out.println("  - Stored files under: " + STORAGE_DIR.toAbsolutePath());
+        System.out.println("  - Ledger blocks (if ledger server available)\n");
+
+        System.out.print("Proceed? [y/N]: ");
+        String proceed = scanner.nextLine().trim().toLowerCase();
+        if (!proceed.equals("y") && !proceed.equals("yes")) {
+            System.out.println("Cancelled.");
+            return;
+        }
+
+        try (java.sql.Connection conn = com.vaultify.db.Database.getConnection()) {
+
+            // 1) Load DB credentials
+            Map<String, DbCred> dbCreds = new HashMap<>();
+            try {
+                // Detect whether 'credential_id_string' exists; fall back safely if not present
+                boolean hasCredIdString = columnExists(conn, "credentials", "credential_id_string");
+
+                StringBuilder select = new StringBuilder("SELECT id, filename, file_size, user_id");
+                if (hasCredIdString) select.append(", credential_id_string");
+                select.append(" FROM credentials");
+
+                try (PreparedStatement ps = conn.prepareStatement(select.toString());
+                     ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        long id = rs.getLong("id");
+                        String cid = null;
+                        if (hasCredIdString) {
+                            try {
+                                cid = rs.getString("credential_id_string");
+                            } catch (SQLException ignore) {
+                                cid = null;
+                            }
+                        }
+
+                        String filename = null;
+                        try {
+                            filename = rs.getString("filename");
+                        } catch (SQLException ignore) {
+                            filename = null;
+                        }
+
+                        long size = 0L;
+                        try {
+                            size = rs.getLong("file_size");
+                        } catch (SQLException ignore) {
+                            size = 0L;
+                        }
+
+                        long userId = 0L;
+                        try {
+                            userId = rs.getLong("user_id");
+                        } catch (SQLException ignore) {
+                            userId = 0L;
+                        }
+
+                        // If credential id string missing, fall back to filename or id-based placeholder
+                        String effectiveCid = cid;
+                        if (effectiveCid == null || effectiveCid.trim().isEmpty()) {
+                            if (filename != null && !filename.trim().isEmpty()) {
+                                effectiveCid = filename;
+                            } else {
+                                effectiveCid = String.valueOf(id);
+                            }
+                        }
+
+                        dbCreds.put(effectiveCid, new DbCred(effectiveCid, id, filename, size, userId));
+                    }
+                }
+
+            } catch (SQLException ex) {
+                System.out.println("✗ Failed to read credentials from DB: " + ex.getMessage());
+            }
+
+            System.out.println("DB credentials found: " + dbCreds.size());
+
+            // 2) Inspect storage directory for files (map: credential-id -> path)
+            Map<String, Path> storedFiles = new HashMap<>();
+            if (Files.exists(STORAGE_DIR) && Files.isDirectory(STORAGE_DIR)) {
+                try (DirectoryStream<Path> ds = Files.newDirectoryStream(STORAGE_DIR)) {
+                    for (Path p : ds) {
+                        if (Files.isRegularFile(p)) {
+                            String name = p.getFileName().toString();
+                            String key = name;
+                            if (name.contains(".")) {
+                                key = name.substring(0, name.indexOf('.'));
+                            }
+                            storedFiles.put(key, p);
+                            storedFiles.put(name, p);
+                        }
+                    }
+                } catch (IOException e) {
+                    System.out.println("✗ Could not list storage dir: " + e.getMessage());
+                }
+            } else {
+                System.out.println("✗ Storage directory not present: " + STORAGE_DIR.toAbsolutePath());
+            }
+
+            System.out.println("Stored files discovered: " + storedFiles.size());
+
+            // 3) Ledger extraction (best-effort, reflection-friendly)
+            Set<String> ledgerCredIds = new HashSet<>();
+            boolean ledgerAvailable = false;
+            try {
+                ledgerAvailable = com.vaultify.client.LedgerClient.isServerAvailable();
+                if (ledgerAvailable) {
+                    List<com.vaultify.models.LedgerBlock> blocks = com.vaultify.client.LedgerClient.getAllBlocks();
+
+                    for (com.vaultify.models.LedgerBlock b : blocks) {
+                        String maybe = extractTextFromLedgerBlock(b);
+                        if (maybe != null && !maybe.isEmpty()) {
+                            String[] tokens = maybe.split("[\\s,\\:\\{\\}\\[\\]\"'\\(\\)<>]+");
+                            for (String tok : tokens) {
+                                if (tok.length() >= 6 && tok.length() <= 128) {
+                                    if (tok.matches(".*[0-9].*") || tok.contains("-")) {
+                                        ledgerCredIds.add(tok);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    System.out.println("Ledger referenced credential-like tokens found: " + ledgerCredIds.size());
+                } else {
+                    System.out.println("Ledger server not available; skipping ledger checks.");
+                }
+            } catch (Exception e) {
+                System.out.println("✗ Ledger check error: " + e.getMessage());
+            }
+
+            // 4) Compare sets and produce report
+            List<String> missingFiles = new ArrayList<>();
+            List<String> orphanFiles = new ArrayList<>();
+            List<String> mismatchedSizes = new ArrayList<>();
+
+            // DB -> File
+            for (DbCred d : dbCreds.values()) {
+                boolean matched = false;
+                if (storedFiles.containsKey(d.credentialId)) {
+                    matched = true;
+                    Path p = storedFiles.get(d.credentialId);
+                    try {
+                        long actual = Files.size(p);
+                        if (actual != d.fileSize) {
+                            mismatchedSizes.add(d.credentialId + " (DB: " + d.fileSize + " vs FS: " + actual + ") -> " + p.getFileName());
+                        }
+                    } catch (IOException ioe) {
+                        mismatchedSizes.add(d.credentialId + " (could not read file) -> " + p.getFileName());
+                    }
+                } else {
+                    if (d.filename != null && storedFiles.containsKey(d.filename)) {
+                        matched = true;
+                        Path p = storedFiles.get(d.filename);
+                        try {
+                            long actual = Files.size(p);
+                            if (actual != d.fileSize) {
+                                mismatchedSizes.add(d.credentialId + " (DB: " + d.fileSize + " vs FS: " + actual + ") -> " + p.getFileName());
+                            }
+                        } catch (IOException ioe) {
+                            mismatchedSizes.add(d.credentialId + " (could not read file) -> " + p.getFileName());
+                        }
+                    }
+                }
+
+                if (!matched) {
+                    missingFiles.add(d.credentialId + " (expected file: " + d.filename + ")");
+                }
+            }
+
+            // File -> DB (orphan files)
+            Set<String> dbIds = dbCreds.keySet();
+            for (Map.Entry<String, Path> ent : storedFiles.entrySet()) {
+                String fileKey = ent.getKey();
+                if (dbIds.contains(fileKey)) continue;
+                boolean matchedByFilename = dbCreds.values().stream().anyMatch(dc -> dc.filename != null && dc.filename.equals(fileKey));
+                if (!matchedByFilename) {
+                    String realName = ent.getValue().getFileName().toString();
+                    boolean matchedReal = dbCreds.values().stream().anyMatch(dc -> dc.filename != null && dc.filename.equals(realName));
+                    if (!matchedReal) {
+                        orphanFiles.add(realName + " -> " + ent.getValue().toAbsolutePath());
+                    }
+                }
+            }
+
+            // Ledger -> DB: tokens present in ledger but not in DB
+            List<String> ledgerOnly = new ArrayList<>();
+            if (!ledgerCredIds.isEmpty()) {
+                for (String ledgerId : ledgerCredIds) {
+                    if (!dbCreds.containsKey(ledgerId)) {
+                        ledgerOnly.add(ledgerId);
+                    }
+                }
+            }
+
+            // 5) Present report
+            System.out.println("\n=== Reconciliation Results ===");
+            System.out.println("DB credentials: " + dbCreds.size());
+            System.out.println("Stored files : " + storedFiles.size());
+            if (ledgerAvailable) {
+                System.out.println("Ledger tokens: " + ledgerCredIds.size());
+            }
+
+            System.out.println("\n-- Missing files for DB entries (" + missingFiles.size() + ")");
+            missingFiles.stream().limit(200).forEach(s -> System.out.println("  • " + s));
+            if (missingFiles.size() > 200) System.out.println("  ... (" + (missingFiles.size() - 200) + " more)");
+
+            System.out.println("\n-- Orphan files on disk (" + orphanFiles.size() + ")");
+            orphanFiles.stream().limit(200).forEach(s -> System.out.println("  • " + s));
+            if (orphanFiles.size() > 200) System.out.println("  ... (" + (orphanFiles.size() - 200) + " more)");
+
+            System.out.println("\n-- Mismatched sizes (" + mismatchedSizes.size() + ")");
+            mismatchedSizes.stream().limit(200).forEach(s -> System.out.println("  • " + s));
+            if (mismatchedSizes.size() > 200) System.out.println("  ... (" + (mismatchedSizes.size() - 200) + " more)");
+
+            if (ledgerAvailable) {
+                System.out.println("\n-- Ledger-only tokens/ids (" + ledgerOnly.size() + ")");
+                ledgerOnly.stream().limit(200).forEach(s -> System.out.println("  • " + s));
+                if (ledgerOnly.size() > 200) System.out.println("  ... (" + (ledgerOnly.size() - 200) + " more)");
+            }
+
+            System.out.println("\n=== Suggested next steps ===");
+            System.out.println("  1) Investigate missing files: check backups or device uploads for those credential IDs.");
+            System.out.println("  2) Investigate orphan files: determine if they belong to old users or are transient temp files.");
+            System.out.println("  3) For mismatched sizes: re-download from storage or re-encrypt original source if available.");
+            if (ledgerAvailable) {
+                System.out.println("  4) For ledger-only IDs: inspect ledger block payloads (structure differs between deployments).");
+            }
+            System.out.println("\nReconciliation finished.\n");
+
+        } catch (SQLException e) {
+            System.out.println("✗ Reconciliation failed due to DB error: " + e.getMessage());
+        } catch (Exception e) {
+            System.out.println("✗ Reconciliation failed: " + e.getMessage());
+        }
+    }
+
+    // ---------------------------
+    // Helper utilities
+    // ---------------------------
+
+    private static long queryCount(java.sql.Connection c, String sql) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                return rs.getLong(1);
+            }
+        }
+        return 0;
+    }
+
+    private static long[] directorySizeAndCount(Path dir) throws IOException {
+        if (!Files.exists(dir) || !Files.isDirectory(dir)) return null;
+        final long[] acc = new long[]{0L, 0L};
+        try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir)) {
+            for (Path p : ds) {
+                if (Files.isRegularFile(p)) {
+                    acc[1] += 1;
+                    acc[0] += Files.size(p);
+                } else if (Files.isDirectory(p)) {
+                    long[] sub = directorySizeAndCount(p);
+                    if (sub != null) {
+                        acc[0] += sub[0];
+                        acc[1] += sub[1];
+                    }
+                }
+            }
+        }
+        return acc;
+    }
+
+    // Simple holder for DB credential row
+    private static class DbCred {
+        String credentialId;
+        long id;
+        String filename;
+        long fileSize;
+        long userId;
+
+        DbCred(String credentialId, long id, String filename, long fileSize, long userId) {
+            this.credentialId = credentialId;
+            this.id = id;
+            this.filename = filename;
+            this.fileSize = fileSize;
+            this.userId = userId;
+        }
+    }
+
+    /**
+     * Try multiple common method names via reflection to extract a text payload from a ledger block.
+     * Falls back to toString() if no method is present.
+     */
+    private static String extractTextFromLedgerBlock(com.vaultify.models.LedgerBlock block) {
+        if (block == null) return null;
+
+        String[] candidates = {"getAction", "getActionName", "getPayload", "getData", "getBody", "getDetails", "getMeta", "getContent", "getMessage"};
+
+        for (String mname : candidates) {
+            try {
+                java.lang.reflect.Method m = block.getClass().getMethod(mname);
+                if (m != null) {
+                    Object val = m.invoke(block);
+                    if (val != null) {
+                        String s = val.toString().trim();
+                        if (!s.isEmpty()) return s;
+                    }
+                }
+            } catch (NoSuchMethodException ignored) {
+                // try next
+            } catch (Throwable t) {
+                // continue defensively
+            }
+        }
+
+        try {
+            String s = block.toString();
+            return (s != null) ? s.trim() : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * Return true if the given column exists for the table (uses JDBC metadata).
+     */
+    private static boolean columnExists(java.sql.Connection conn, String table, String column) {
+        try (ResultSet rs = conn.getMetaData().getColumns(null, "public", table, column)) {
+            return rs.next();
+        } catch (SQLException e) {
+            return false;
+        }
     }
 }
