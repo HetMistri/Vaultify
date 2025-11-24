@@ -9,7 +9,7 @@ import com.vaultify.threading.TokenCleanupTask;
 
 public class VaultifyApplication {
     public static void main(String[] args) {
-        System.out.println("Vaultify CLI starting...");
+        System.out.println("Vaultify CLI v0.1 Beta starting...");
 
         // Start background activity logger
         ActivityLogger logger = new ActivityLogger();

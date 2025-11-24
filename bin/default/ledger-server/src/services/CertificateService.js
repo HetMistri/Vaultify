@@ -1,5 +1,5 @@
 import { Certificate } from "../models/Certificate.js";
-import { readJSON, writeJSON } from "../utils/storage.js";
+import { readJSON, writeJSON, writeJSONAsync } from "../utils/storage.js";
 import { verifySignature, sha256 } from "../utils/crypto.js";
 
 const CERTIFICATES_FILE = "certificates.json";
@@ -32,11 +32,11 @@ export class CertificateService {
   /**
    * Save certificates to storage
    */
-  saveCertificates() {
+  async saveCertificates() {
     const certsArray = Array.from(this.certificates.values()).map((cert) =>
       cert.toJSON()
     );
-    writeJSON(CERTIFICATES_FILE, certsArray);
+    await writeJSONAsync(CERTIFICATES_FILE, certsArray);
   }
 
   /**
@@ -45,9 +45,14 @@ export class CertificateService {
    * @param {Object} payload - Certificate payload
    * @param {string} signature - RSA signature
    * @param {string} issuerPublicKey - Issuer's public key
-   * @returns {Certificate} Registered certificate
+   * @returns {Promise<Certificate>} Registered certificate
    */
-  registerCertificate(certificateId, payload, signature, issuerPublicKey) {
+  async registerCertificate(
+    certificateId,
+    payload,
+    signature,
+    issuerPublicKey
+  ) {
     // Check if certificate already exists
     if (this.certificates.has(certificateId)) {
       throw new Error("Certificate already exists");
@@ -69,7 +74,7 @@ export class CertificateService {
       issuerPublicKey
     );
     this.certificates.set(certificateId, certificate);
-    this.saveCertificates();
+    await this.saveCertificates();
 
     return certificate;
   }

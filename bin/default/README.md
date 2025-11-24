@@ -1,4 +1,4 @@
-# Vaultify — Secure Credential Vault System
+# Vaultify v0.1 Beta — Secure Credential Vault System
 
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/)
 [![Gradle](https://img.shields.io/badge/Gradle-8.10-blue.svg)](https://gradle.org/)

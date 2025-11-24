@@ -10,7 +10,7 @@ import { sha256 } from "../utils/crypto.js";
  * Append a new block to the ledger
  * POST /api/ledger/blocks
  */
-export const appendBlock = (req, res) => {
+export const appendBlock = async (req, res) => {
   try {
     const { action, dataHash } = req.body;
 
@@ -22,7 +22,7 @@ export const appendBlock = (req, res) => {
     }
 
     // Append block
-    const block = ledgerService.appendBlock(action, dataHash);
+    const block = await ledgerService.appendBlock(action, dataHash);
 
     res.status(201).json({
       message: "Block appended successfully",

@@ -1,4 +1,4 @@
-import { readJSON, writeJSON } from "../utils/storage.js";
+import { readJSON, writeJSON, writeJSONAsync } from "../utils/storage.js";
 
 const REVOKED_TOKENS_FILE = "revoked-tokens.json";
 const PUBLIC_KEYS_FILE = "public-keys.json";
@@ -31,9 +31,9 @@ export class TokenService {
   /**
    * Save revoked tokens to storage
    */
-  saveRevokedTokens() {
+  async saveRevokedTokens() {
     const tokensArray = Array.from(this.revokedTokens.values());
-    writeJSON(REVOKED_TOKENS_FILE, tokensArray);
+    await writeJSONAsync(REVOKED_TOKENS_FILE, tokensArray);
   }
 
   /**
@@ -48,18 +48,18 @@ export class TokenService {
   /**
    * Save public keys to storage
    */
-  savePublicKeys() {
+  async savePublicKeys() {
     const keysObject = Object.fromEntries(this.publicKeys);
-    writeJSON(PUBLIC_KEYS_FILE, keysObject);
+    await writeJSONAsync(PUBLIC_KEYS_FILE, keysObject);
   }
 
   /**
    * Revoke a token
    * @param {string} tokenHash - SHA-256 hash of token
    * @param {string} reason - Reason for revocation
-   * @returns {Object} Revocation info
+   * @returns {Promise<Object>} Revocation info
    */
-  revokeToken(tokenHash, reason = "No reason provided") {
+  async revokeToken(tokenHash, reason = "No reason provided") {
     if (this.revokedTokens.has(tokenHash)) {
       throw new Error("Token already revoked");
     }
@@ -71,7 +71,7 @@ export class TokenService {
     };
 
     this.revokedTokens.set(tokenHash, revocationInfo);
-    this.saveRevokedTokens();
+    await this.saveRevokedTokens();
 
     return revocationInfo;
   }
@@ -106,11 +106,11 @@ export class TokenService {
    * Register a user's public key
    * @param {string} userId - User ID
    * @param {string} publicKey - PEM-formatted public key
-   * @returns {boolean} Success status
+   * @returns {Promise<boolean>} Success status
    */
-  registerPublicKey(userId, publicKey) {
+  async registerPublicKey(userId, publicKey) {
     this.publicKeys.set(userId, publicKey);
-    this.savePublicKeys();
+    await this.savePublicKeys();
     return true;
   }
 
