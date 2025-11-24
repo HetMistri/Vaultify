@@ -5,19 +5,19 @@
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
 
-Vaultify is a **Java-based secure credential vault** system demonstrating enterprise-grade software architecture with OOP design patterns, multithreading, cryptographic abstractions, JDBC persistence, and blockchain-inspired audit ledger.
+Vaultify is a **Java-based secure credential vault** system demonstrating enterprise-grade software architecture with OOP design patterns, multithreading, cryptographic abstractions, repository-driven dual persistence (PostgreSQL + filesystem), and a blockchain-inspired audit ledger.
 
 ## 🎯 Project Status
 
-**Implementation:** Fully Functional Production-Ready System ✅
+**Implementation:** Actively Refactored & Functional ✅
 
-- ✅ **Service Layer:** All 6 services fully implemented with remote ledger integration
-- ✅ **Crypto Layer:** AES-256-GCM and RSA-2048 OAEP complete implementations
-- ✅ **Threading Layer:** ThreadManager with async logging, encryption tasks, and token cleanup
-- ✅ **Ledger System:** Remote Node.js ledger server with REST API
-- ✅ **Certificate System:** Complete token generation and verification pipeline
-- ✅ **DAO Layer:** Dual storage (File + JDBC) with automatic failover
-- ✅ **CLI:** Interactive command-line interface with full credential management
+- ✅ **Service Layer:** Unified services with remote ledger integration
+- ✅ **Crypto Layer:** AES-256-GCM + RSA-2048 OAEP implementations
+- ✅ **Threading Layer:** Async logging, encryption tasks, token cleanup
+- ✅ **Ledger System:** Remote Node.js ledger server (append-only blockchain)
+- ✅ **Certificate System:** Token issuance & verification pipeline
+- ✅ **Repository Layer:** Dual storage (PostgreSQL + filesystem) replacing legacy DAOs
+- ✅ **CLI:** Interactive command-line interface for credential management
 - ✅ **Build System:** Gradle 8.10 with custom tasks and fat JAR packaging
 - ✅ **Docker:** Multi-container setup (PostgreSQL + App)
 
@@ -37,13 +37,13 @@ Vaultify is a **Java-based secure credential vault** system demonstrating enterp
 
 ## ✨ Features
 
-### Planned Architecture Features
+### Core Architecture Features
 
 - 🔐 **Hybrid Encryption:** AES-256-GCM for data + RSA-2048+ for key wrapping
 - 🔗 **Immutable Ledger:** SHA-256 hash-linked blockchain for audit trails
 - ⚡ **Multithreading:** Async encryption tasks, scheduled token cleanup, background logging
-- 🗄️ **JDBC Persistence:** PostgreSQL with DAO pattern
-- 🎨 **Clean Architecture:** Service → DAO → Database with clear separation
+- 🗄️ **Dual Persistence:** PostgreSQL + filesystem via repository strategy
+- 🎨 **Clean Architecture:** Service → Repository → Storage/DB with clear separation
 - 🔌 **Pluggable Crypto:** `CryptoEngine` interface for algorithm flexibility
 - 🐳 **Containerized:** Docker Compose with health checks and volume persistence
 
@@ -61,13 +61,13 @@ Vaultify is a **Java-based secure credential vault** system demonstrating enterp
 
 ### Design Patterns & Principles
 
-- **Layered Architecture:** Presentation → Service → DAO → Database
+- **Layered Architecture:** CLI → Service → Repository → Persistence (DB + Files)
 - **Interface Segregation:** `CryptoEngine` abstraction for encryption algorithms
-- **Dependency Injection:** Services receive dependencies via constructors
-- **Factory Pattern:** Key generation and algorithm selection
-- **DAO Pattern:** Data access abstraction with JDBC
-- **Singleton Pattern:** ThreadManager and configuration management
+- **Dependency Injection (manual):** Constructor-based wiring (future DI container planned)
+- **Factory Pattern:** RepositoryFactory selects storage mode (jdbc | file | dual)
 - **Strategy Pattern:** Pluggable crypto engines (AES, RSA)
+- **Template Method:** Abstract JDBC/File repository base classes
+- **Singleton Pattern:** ThreadManager, configuration management
 
 ### Package Structure
 
@@ -90,10 +90,10 @@ com.vaultify/
 │   ├── RSAEngine.java
 │   ├── KeyManager.java
 │   └── HashUtil.java
-├── dao/              # Data Access Objects
-│   ├── UserDAO.java
-│   ├── CredentialDAO.java
-│   └── TokenDAO.java
+├── repository/       # Repository abstractions (Postgres/File/Dual)
+│   ├── UserRepository.*
+│   ├── CredentialRepository.*
+│   └── TokenRepository.*
 ├── models/           # Domain entities
 │   ├── User.java
 │   ├── Credential.java
@@ -130,12 +130,12 @@ com.vaultify/
 - Manages transactions and error handling
 - Current state: Method signatures defined, implementations pending
 
-**DAO Layer** (Data Access)
+**Repository Layer** (Persistence Abstraction)
 
-- JDBC operations with PreparedStatements
-- Transaction management
-- Connection pooling
-- Current state: Empty classes, ready for implementation
+- Replaces legacy DAO classes (now removed)
+- Uniform API for user, credential, token domains
+- Dual mode: persists to PostgreSQL and filesystem when `storage.mode=dual`
+- Encapsulates encryption metadata (JSON in DB column) for credentials
 
 **Crypto Layer** (Security)
 
@@ -542,18 +542,30 @@ docker compose logs app
 
 ## 📊 Project Metrics
 
-| Metric         | Value        |
-| -------------- | ------------ |
-| Java Classes   | 36           |
-| Packages       | 11           |
-| Services       | 6            |
-| DAO Classes    | 3            |
-| Crypto Engines | 2 (AES, RSA) |
-| Thread Tasks   | 4            |
-| Model Classes  | 5            |
-| Gradle Version | 8.10         |
-| Java Version   | 21 (LTS)     |
-| Docker Images  | 2 (app, db)  |
+| Metric              | Value                       |
+| ------------------- | --------------------------- |
+| Java Classes        | ~34 (post-DAO removal)      |
+| Packages            | 10                          |
+| Services            | 6                           |
+| Repository Families | 3 (User, Credential, Token) |
+| Crypto Engines      | 2 (AES, RSA)                |
+| Threaded Tasks      | 4                           |
+| Model Classes       | 5+                          |
+| Gradle Version      | 8.10                        |
+| Java Version        | 21 (LTS)                    |
+| Docker Images       | 2 (app, db)                 |
+
+### Persistence Refactor Summary
+
+Legacy DAO classes (`*DAO.java`) have been fully removed and replaced with a repository pattern:
+
+- `RepositoryFactory` selects implementation based on `storage.mode` (jdbc | file | dual)
+- Dual mode writes both to PostgreSQL (structured metadata) and filesystem (encrypted blobs)
+- Credential encryption metadata (`encryptedKeyBase64`, `ivBase64`, `dataHash`, `fileSize`) serialized as JSON inside the DB credential row for portability
+- Eliminates duplicated logic and reduces surface area for persistence-related bugs
+- Stubs were deprecated then deleted after verification of zero external references
+
+For detailed rationale and migration notes see `docs/ARCHITECTURE_PERSISTENCE.md`.
 
 ## 📝 Code Map
 

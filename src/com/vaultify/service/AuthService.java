@@ -8,9 +8,9 @@ import java.util.Base64;
 import com.vaultify.crypto.AESEngine;
 import com.vaultify.crypto.HashUtil;
 import com.vaultify.crypto.RSAEngine;
-import com.vaultify.dao.FileUserDAO;
-import com.vaultify.dao.JdbcUserDAO;
 import com.vaultify.models.User;
+import com.vaultify.repository.RepositoryFactory;
+import com.vaultify.repository.UserRepository;
 import com.vaultify.threading.ThreadManager;
 
 /**
@@ -21,8 +21,7 @@ import com.vaultify.threading.ThreadManager;
  * encryption.
  */
 public class AuthService {
-    private final FileUserDAO fileUserDAO;
-    private final JdbcUserDAO jdbcUserDAO;
+    private final UserRepository userRepository; // dual/selected repository
     private final LedgerService ledgerService;
 
     // Current session
@@ -30,8 +29,8 @@ public class AuthService {
     private PrivateKey currentUserPrivateKey;
 
     public AuthService() {
-        this.fileUserDAO = new FileUserDAO();
-        this.jdbcUserDAO = new JdbcUserDAO();
+        // Acquire repository from factory for configured storage.mode
+        this.userRepository = RepositoryFactory.get().userRepository();
         this.ledgerService = new LedgerService();
     }
 
@@ -49,7 +48,7 @@ public class AuthService {
         }
 
         // Check if user already exists (check both storages)
-        if (fileUserDAO.findByUsername(username) != null || jdbcUserDAO.findByUsername(username) != null) {
+        if (userRepository.findByUsername(username) != null) {
             return null; // Username already taken
         }
 
@@ -115,15 +114,8 @@ public class AuthService {
                 System.err.println("[Warning] Failed to write key files: " + ioEx.getMessage());
             }
 
-            // Save to BOTH storage backends for redundancy
-            fileUserDAO.save(user); // JSON file backup
-            try {
-                jdbcUserDAO.save(user); // PostgreSQL database
-                System.out.println("[Dual Storage] User saved to both File and Database");
-            } catch (Exception e) {
-                System.err.println("[Warning] Failed to save to database: " + e.getMessage());
-                // Continue - file storage succeeded
-            }
+            // Persist via repository abstraction (handles dual strategy internally)
+            userRepository.save(user);
 
             // Log registration to ledger
             String dataHash = HashUtil.sha256("REGISTER:" + username + ":" + publicKeyBase64);
@@ -150,24 +142,8 @@ public class AuthService {
         }
 
         try {
-            // Try JDBC first (faster indexed lookup), fallback to File
-            User user = null;
-            try {
-                user = jdbcUserDAO.findByUsername(username);
-                if (user != null) {
-                    System.out.println("[Dual Storage] User loaded from Database");
-                }
-            } catch (Exception e) {
-                System.out.println("[Dual Storage] Database unavailable, using File storage");
-            }
-
-            // Fallback to file storage
-            if (user == null) {
-                user = fileUserDAO.findByUsername(username);
-                if (user != null) {
-                    System.out.println("[Dual Storage] User loaded from File");
-                }
-            }
+            // Unified repository lookup (dual strategy inside repository)
+            User user = userRepository.findByUsername(username);
 
             if (user == null) {
                 return false;
@@ -274,15 +250,7 @@ public class AuthService {
             }
 
             // Load user from storage
-            User user = null;
-            try {
-                user = jdbcUserDAO.findByUsername(username);
-            } catch (Exception e) {
-                // Fallback to file
-            }
-            if (user == null) {
-                user = fileUserDAO.findByUsername(username);
-            }
+            User user = userRepository.findByUsername(username);
 
             if (user == null) {
                 return null;

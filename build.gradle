@@ -13,15 +13,23 @@ repositories {
 dependencies {
     implementation 'org.postgresql:postgresql:42.7.4'
     implementation 'com.google.code.gson:gson:2.10.1'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 sourceSets {
     main {
         java {
             srcDirs = ['src']
+            exclude 'test/**'
         }
         resources {
             srcDirs = ['resources']
+        }
+    }
+    test {
+        java {
+            srcDirs = ['src/test/java']
         }
     }
 }
@@ -79,4 +87,8 @@ tasks.register('dockerBuild') {
             commandLine 'docker', 'compose', 'build'
         }
     }
+}
+
+test {
+    useJUnitPlatform()
 }

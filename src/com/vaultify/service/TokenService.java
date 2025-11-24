@@ -5,17 +5,16 @@ import java.nio.file.Path;
 import java.security.PrivateKey;
 import java.security.Signature;
 import java.sql.Timestamp;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 
 import com.vaultify.client.LedgerClient;
 import com.vaultify.crypto.HashUtil;
-import com.vaultify.dao.FileTokenDAO;
-import com.vaultify.dao.JdbcTokenDAO;
 import com.vaultify.models.CredentialMetadata;
 import com.vaultify.models.LedgerBlock;
 import com.vaultify.models.Token;
+import com.vaultify.repository.RepositoryFactory;
+import com.vaultify.repository.TokenRepository;
 import com.vaultify.util.TokenUtil;
 import com.vaultify.verifier.Certificate;
 import com.vaultify.verifier.CertificateParser;
@@ -33,13 +32,11 @@ import com.vaultify.verifier.CertificateParser;
  */
 public class TokenService {
     private final LedgerService ledgerService;
-    private final JdbcTokenDAO jdbcTokenDAO;
-    private final FileTokenDAO fileTokenDAO;
+    private final TokenRepository tokenRepository; // dual repository abstraction
 
     public TokenService() {
         this.ledgerService = new LedgerService();
-        this.jdbcTokenDAO = new JdbcTokenDAO();
-        this.fileTokenDAO = new FileTokenDAO();
+        this.tokenRepository = RepositoryFactory.get().tokenRepository();
     }
 
     /**
@@ -61,14 +58,7 @@ public class TokenService {
         token.setExpiry(new Timestamp(expiry));
         token.setRevoked(false);
 
-        // Save to BOTH storages
-        fileTokenDAO.save(token);
-        try {
-            jdbcTokenDAO.save(token);
-            System.out.println("[Dual Storage] Token saved to both File and Database");
-        } catch (Exception e) {
-            System.err.println("[Warning] Failed to save token to database: " + e.getMessage());
-        }
+        tokenRepository.save(token);
 
         // Append to ledger using tokenHash (not raw token)
         String tokenHash = HashUtil.sha256(tokenString);
@@ -92,12 +82,7 @@ public class TokenService {
     }
 
     public void persistToken(Token token) {
-        fileTokenDAO.save(token);
-        try {
-            jdbcTokenDAO.save(token);
-        } catch (Exception e) {
-            System.err.println("[Warning] DB persist failed for token: " + e.getMessage());
-        }
+        tokenRepository.save(token);
     }
 
     public Certificate createCertificate(Token token, CredentialMetadata meta,
@@ -188,17 +173,7 @@ public class TokenService {
             return null;
         }
 
-        // Try to load from DB first
-        Token token = null;
-        try {
-            token = jdbcTokenDAO.findByToken(tokenString);
-        } catch (Exception e) {
-            // Fallback to file
-        }
-
-        if (token == null) {
-            token = fileTokenDAO.findByToken(tokenString);
-        }
+        Token token = tokenRepository.findByTokenString(tokenString);
 
         if (token == null) {
             System.out.println("✗ Token not found");
@@ -223,18 +198,8 @@ public class TokenService {
      * @param tokenString Token to revoke
      */
     public void revokeToken(String tokenString) {
-        try {
-            jdbcTokenDAO.revokeToken(tokenString);
-        } catch (Exception e) {
-            System.err.println("[Warning] Failed to revoke in database: " + e.getMessage());
-        }
-
-        // Also mark in file storage
-        Token token = fileTokenDAO.findByToken(tokenString);
-        if (token != null) {
-            token.setRevoked(true);
-            fileTokenDAO.save(token);
-        }
+        tokenRepository.revoke(tokenString);
+        Token token = tokenRepository.findByTokenString(tokenString);
 
         // Revoke on ledger server using tokenHash
         String tokenHash = HashUtil.sha256(tokenString);
@@ -260,29 +225,13 @@ public class TokenService {
      * List all tokens for a user.
      */
     public List<Token> listUserTokens(long userId) {
-        List<Token> tokens = new ArrayList<>();
-        try {
-            tokens = jdbcTokenDAO.findByUserId(userId);
-            if (!tokens.isEmpty()) {
-                return tokens;
-            }
-        } catch (Exception e) {
-            System.err.println("[Warning] DB token list failed: " + e.getMessage());
-        }
-        // Fallback to file storage
-        return fileTokenDAO.findAll().stream()
-                .filter(t -> t.getIssuerUserId() == userId)
-                .toList();
+        return tokenRepository.findByIssuerUserId(userId);
     }
 
     /**
      * Clean up expired tokens.
      */
     public void cleanupExpiredTokens() {
-        try {
-            jdbcTokenDAO.deleteExpiredTokens();
-        } catch (Exception e) {
-            System.err.println("✗ Failed to cleanup expired tokens: " + e.getMessage());
-        }
+        tokenRepository.deleteExpired();
     }
 }

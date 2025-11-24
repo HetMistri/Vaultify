@@ -1,7 +1,8 @@
 package com.vaultify.service;
 
-import com.vaultify.dao.FileUserDAO;
 import com.vaultify.models.User;
+import com.vaultify.repository.RepositoryFactory;
+import com.vaultify.repository.UserRepository;
 
 /**
  * UserService handles user management operations.
@@ -9,11 +10,11 @@ import com.vaultify.models.User;
  * listing.
  */
 public class UserService {
-    private final FileUserDAO userDAO;
+    private final UserRepository userRepository;
     private final AuthService authService;
 
     public UserService() {
-        this.userDAO = new FileUserDAO();
+        this.userRepository = RepositoryFactory.get().userRepository();
         this.authService = new AuthService();
     }
 
@@ -43,7 +44,7 @@ public class UserService {
      * Find user by username.
      */
     public User findByUsername(String username) {
-        return userDAO.findByUsername(username);
+        return userRepository.findByUsername(username);
     }
 
     /**
