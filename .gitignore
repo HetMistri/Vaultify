@@ -35,7 +35,6 @@ Thumbs.db
 ##############################
 .env
 .env.DEVELOPMENT
-resources/config.properties
 
 ##############################
 # Java
@@ -45,3 +44,4 @@ resources/config.properties
 ##############################
 /.lh
 vault_data/
+resources/

@@ -229,11 +229,11 @@ public class CommandRouter {
     private static void printVaultHelp() {
         System.out.println("Vault commands:");
         System.out.println("  add                   - add credential (interactive)");
-        System.out.println("  add --file <path>     - add credential from file");
-        System.out.println("  add --text            - add text/password credential");
+        System.out.println("  delete <id>           - delete a credential");
         System.out.println("  list                  - list stored credentials");
         System.out.println("  view <id>             - view credential details");
-        System.out.println("  delete <id>           - delete a credential");
+        System.out.println("  share                 - generate share token + signed certificate for credential");
+        System.out.println("  verify-cert           - verify a certificate file with public key");
         System.out.println("  back                  - return to top-level CLI");
     }
 
@@ -747,8 +747,6 @@ public class CommandRouter {
         System.out.println("  logout         - logout current user");
         System.out.println("  whoami         - show current logged-in user");
         System.out.println("  vault          - vault operations (add/list/view/delete credentials)");
-        System.out.println("  share          - generate share token + signed certificate for credential");
-        System.out.println("  verify-cert    - verify a certificate file with public key");
         System.out.println("  revoke-token   - revoke a previously generated token");
         System.out.println("  list-tokens    - list all tokens you've generated");
         System.out.println("  verify-ledger  - verify integrity of the blockchain ledger");
