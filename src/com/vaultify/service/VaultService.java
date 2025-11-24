@@ -57,7 +57,7 @@ public class VaultService {
         // 2. Save metadata to BOTH storage backends
         fileCredentialDAO.save(meta); // JSON file
         try {
-            jdbcCredentialDAO.save(meta, userId); // PostgreSQL database
+            long generatedId = jdbcCredentialDAO.save(meta, userId); // PostgreSQL database; sets meta.id
             System.out.println("[Dual Storage] Credential metadata saved to both File and Database");
         } catch (Exception e) {
             System.err.println("[Warning] Failed to save credential to database: " + e.getMessage());
@@ -107,8 +107,10 @@ public class VaultService {
         // 1. Load metadata (try JDBC first, fallback to File)
         CredentialMetadata meta = null;
         try {
-            // Try database first
-            List<CredentialMetadata> allFromDb = jdbcCredentialDAO.findByUserId(0); // Get all, filter by ID
+            // Try database first (load all credentials for user-independent search)
+            List<CredentialMetadata> allFromDb = jdbcCredentialDAO.findByUserId(0); // NOTE: credential table lacks
+                                                                                    // direct UUID lookup; using legacy
+                                                                                    // approach
             meta = allFromDb.stream()
                     .filter(c -> credentialId.equals(c.credentialIdString))
                     .findFirst()

@@ -47,4 +47,16 @@ public class Config {
             return defaultValue;
         }
     }
+
+    public static boolean getBoolean(String key, boolean defaultValue) {
+        String value = get(key);
+        if (value == null || value.isEmpty()) {
+            return defaultValue;
+        }
+        return Boolean.parseBoolean(value);
+    }
+
+    public static boolean isDevMode() {
+        return getBoolean("dev.mode", false);
+    }
 }

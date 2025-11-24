@@ -10,7 +10,14 @@ import java.security.PublicKey;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Scanner;
+import java.util.Set;
+
 import com.vaultify.models.CredentialMetadata;
 import com.vaultify.models.Token;
 import com.vaultify.models.User;
@@ -43,7 +50,7 @@ public class CommandRouter {
     // Storage paths (safe defaults matching existing code)
     private static final Path KEYS_DIR = Paths.get("vault_data/keys");
     private static final Path CERTS_DIR = Paths.get("vault_data/certificates");
-    private static final Path STORAGE_DIR = Paths.get("vault_data/credential");
+    private static final Path STORAGE_DIR = Paths.get("vault_data/credentials");
 
     // -------------------------
     // Instance entrypoint used by VaultifyApplication
@@ -64,6 +71,8 @@ public class CommandRouter {
     // Static router (reusable)
     // -------------------------
     public static void handle(String command, Scanner scanner) {
+        boolean devMode = Config.isDevMode();
+
         switch (command) {
             case "register" -> register(scanner);
             case "login" -> login(scanner);
@@ -73,8 +82,6 @@ public class CommandRouter {
             case "revoke-token" -> revokeToken(scanner);
             case "list-tokens" -> listTokens();
             case "verify-ledger" -> verifyLedger();
-            case "test-ledger" -> testLedgerConnection();
-            case "test-db" -> testDatabaseConnection();
             case "help" -> printHelp();
             case "exit" -> {
                 System.out.println("Exiting Vaultify CLI...");
@@ -85,6 +92,30 @@ public class CommandRouter {
             case "stats" -> showStats();
             case "health" -> showHealth();
             case "reconcile", "drift-report" -> reconcileAndReport(scanner);
+
+            // Dev-only commands
+            case "test-ledger" -> {
+                if (devMode) {
+                    testLedgerConnection();
+                } else {
+                    System.out.println("✗ Command 'test-ledger' is only available in development mode.");
+                }
+            }
+            case "test-db" -> {
+                if (devMode) {
+                    testDatabaseConnection();
+                } else {
+                    System.out.println("✗ Command 'test-db' is only available in development mode.");
+                }
+            }
+            case "reset-all", "reset" -> {
+                if (devMode) {
+                    resetAll(scanner);
+                } else {
+                    System.out.println("✗ Command 'reset-all' is only available in development mode.");
+                }
+            }
+            case "dev-mode" -> showDevModeStatus();
 
             default -> System.out.println("Unknown command: " + command);
         }
@@ -486,11 +517,21 @@ public class CommandRouter {
                 return;
             }
 
-            // Get user's public key path for certificate
-            Path publicKeyPath = Paths.get("vault_data/keys/" + user.getUsername() + "_public.pem");
+            // Get user's public key path for certificate (auto-create if missing)
+            Path publicKeyPath = Paths.get("vault_data", "keys", user.getUsername() + "_public.pem");
             if (!Files.exists(publicKeyPath)) {
-                System.out.println("✗ Public key not found: " + publicKeyPath);
-                return;
+                try {
+                    Files.createDirectories(publicKeyPath.getParent());
+                    // Reconstruct PEM from Base64 stored in user (X.509 encoded bytes)
+                    byte[] pubDer = java.util.Base64.getDecoder().decode(user.getPublicKey());
+                    String pemBody = java.util.Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(pubDer);
+                    String pem = "-----BEGIN PUBLIC KEY-----\n" + pemBody + "\n-----END PUBLIC KEY-----\n";
+                    Files.writeString(publicKeyPath, pem);
+                    System.out.println("[Auto-Recovery] Public key file recreated: " + publicKeyPath);
+                } catch (Exception pkEx) {
+                    System.out.println("✗ Public key not found and could not be recreated: " + pkEx.getMessage());
+                    return;
+                }
             }
 
             // Generate certificate
@@ -647,7 +688,7 @@ public class CommandRouter {
 
             // List all tables in the database
             System.out.println("\n=== Available Tables ===");
-            try (java.sql.ResultSet rs = conn.getMetaData().getTables(null, "public", "%", new String[]{"TABLE"})) {
+            try (java.sql.ResultSet rs = conn.getMetaData().getTables(null, "public", "%", new String[] { "TABLE" })) {
                 boolean foundTables = false;
                 while (rs.next()) {
                     String tableName = rs.getString("TABLE_NAME");
@@ -662,7 +703,7 @@ public class CommandRouter {
 
             // Describe each expected table and validate schema
             System.out.println("\n=== Table Schemas ===");
-            String[] expectedTables = {"users", "credentials", "tokens"};
+            String[] expectedTables = { "users", "credentials", "tokens" };
             boolean schemaValid = true;
 
             for (String table : expectedTables) {
@@ -736,10 +777,12 @@ public class CommandRouter {
                 // defensive: try getIndex/getAction if available
                 try {
                     System.out.println("✓ Latest block index: " + latest.getIndex());
-                } catch (Throwable ignored) {}
+                } catch (Throwable ignored) {
+                }
                 try {
                     System.out.println("✓ Latest block action: " + latest.getAction());
-                } catch (Throwable ignored) {}
+                } catch (Throwable ignored) {
+                }
             }
 
             System.out.print("\nVerifying chain integrity... ");
@@ -764,7 +807,10 @@ public class CommandRouter {
     // ---------------------------
 
     private static void printHelp() {
-        System.out.println("Available commands:");
+        boolean devMode = Config.isDevMode();
+
+        System.out.println("\n=== Vaultify CLI Help" + (devMode ? " [DEV MODE]" : " [PRODUCTION]") + " ===");
+        System.out.println("\nCore Commands:");
         System.out.println("  register       - create a new user with RSA key pair");
         System.out.println("  login          - login with username/password");
         System.out.println("  logout         - logout current user");
@@ -773,14 +819,25 @@ public class CommandRouter {
         System.out.println("  revoke-token   - revoke a previously generated token");
         System.out.println("  list-tokens    - list all tokens you've generated");
         System.out.println("  verify-ledger  - verify integrity of the blockchain ledger");
-        System.out.println("  test-ledger    - test connection to remote ledger server");
-        System.out.println("  test-db        - test database connection and schema");
+
+        System.out.println("\nMonitoring Commands:");
         System.out.println("  stats          - show system stats (counts, disk usage)");
         System.out.println("  health         - run health checks (DB, ledger, storage)");
         System.out.println("  reconcile      - reconcile DB, stored files and ledger; produce drift report");
         System.out.println("  drift-report   - alias for reconcile");
+
+        if (devMode) {
+            System.out.println("\n⚠️  Development Commands (dev.mode=true):");
+            System.out.println("  test-ledger    - test connection to remote ledger server");
+            System.out.println("  test-db        - test database connection and schema");
+            System.out.println("  reset-all      - ⚠️  DELETE ALL DATA (users, credentials, tokens, ledger)");
+            System.out.println("  dev-mode       - show current development mode status");
+        }
+
+        System.out.println("\nGeneral:");
         System.out.println("  help           - show this help");
         System.out.println("  exit           - quit CLI");
+        System.out.println("\n================================================\n");
     }
 
     // ---------------------------
@@ -893,8 +950,9 @@ public class CommandRouter {
             } else {
                 boolean anyKey = false;
                 try (java.sql.Connection c = com.vaultify.db.Database.getConnection();
-                     PreparedStatement ps = c.prepareStatement("SELECT public_key FROM users WHERE public_key IS NOT NULL LIMIT 1");
-                     ResultSet rs = ps.executeQuery()) {
+                        PreparedStatement ps = c
+                                .prepareStatement("SELECT public_key FROM users WHERE public_key IS NOT NULL LIMIT 1");
+                        ResultSet rs = ps.executeQuery()) {
                     if (rs.next()) {
                         String pk = rs.getString(1);
                         if (pk != null && !pk.trim().isEmpty()) {
@@ -939,11 +997,12 @@ public class CommandRouter {
                 boolean hasCredIdString = columnExists(conn, "credentials", "credential_id_string");
 
                 StringBuilder select = new StringBuilder("SELECT id, filename, file_size, user_id");
-                if (hasCredIdString) select.append(", credential_id_string");
+                if (hasCredIdString)
+                    select.append(", credential_id_string");
                 select.append(" FROM credentials");
 
                 try (PreparedStatement ps = conn.prepareStatement(select.toString());
-                     ResultSet rs = ps.executeQuery()) {
+                        ResultSet rs = ps.executeQuery()) {
                     while (rs.next()) {
                         long id = rs.getLong("id");
                         String cid = null;
@@ -976,7 +1035,8 @@ public class CommandRouter {
                             userId = 0L;
                         }
 
-                        // If credential id string missing, fall back to filename or id-based placeholder
+                        // If credential id string missing, fall back to filename or id-based
+                        // placeholder
                         String effectiveCid = cid;
                         if (effectiveCid == null || effectiveCid.trim().isEmpty()) {
                             if (filename != null && !filename.trim().isEmpty()) {
@@ -1063,7 +1123,8 @@ public class CommandRouter {
                     try {
                         long actual = Files.size(p);
                         if (actual != d.fileSize) {
-                            mismatchedSizes.add(d.credentialId + " (DB: " + d.fileSize + " vs FS: " + actual + ") -> " + p.getFileName());
+                            mismatchedSizes.add(d.credentialId + " (DB: " + d.fileSize + " vs FS: " + actual + ") -> "
+                                    + p.getFileName());
                         }
                     } catch (IOException ioe) {
                         mismatchedSizes.add(d.credentialId + " (could not read file) -> " + p.getFileName());
@@ -1075,7 +1136,8 @@ public class CommandRouter {
                         try {
                             long actual = Files.size(p);
                             if (actual != d.fileSize) {
-                                mismatchedSizes.add(d.credentialId + " (DB: " + d.fileSize + " vs FS: " + actual + ") -> " + p.getFileName());
+                                mismatchedSizes.add(d.credentialId + " (DB: " + d.fileSize + " vs FS: " + actual
+                                        + ") -> " + p.getFileName());
                             }
                         } catch (IOException ioe) {
                             mismatchedSizes.add(d.credentialId + " (could not read file) -> " + p.getFileName());
@@ -1092,11 +1154,14 @@ public class CommandRouter {
             Set<String> dbIds = dbCreds.keySet();
             for (Map.Entry<String, Path> ent : storedFiles.entrySet()) {
                 String fileKey = ent.getKey();
-                if (dbIds.contains(fileKey)) continue;
-                boolean matchedByFilename = dbCreds.values().stream().anyMatch(dc -> dc.filename != null && dc.filename.equals(fileKey));
+                if (dbIds.contains(fileKey))
+                    continue;
+                boolean matchedByFilename = dbCreds.values().stream()
+                        .anyMatch(dc -> dc.filename != null && dc.filename.equals(fileKey));
                 if (!matchedByFilename) {
                     String realName = ent.getValue().getFileName().toString();
-                    boolean matchedReal = dbCreds.values().stream().anyMatch(dc -> dc.filename != null && dc.filename.equals(realName));
+                    boolean matchedReal = dbCreds.values().stream()
+                            .anyMatch(dc -> dc.filename != null && dc.filename.equals(realName));
                     if (!matchedReal) {
                         orphanFiles.add(realName + " -> " + ent.getValue().toAbsolutePath());
                     }
@@ -1123,28 +1188,36 @@ public class CommandRouter {
 
             System.out.println("\n-- Missing files for DB entries (" + missingFiles.size() + ")");
             missingFiles.stream().limit(200).forEach(s -> System.out.println("  • " + s));
-            if (missingFiles.size() > 200) System.out.println("  ... (" + (missingFiles.size() - 200) + " more)");
+            if (missingFiles.size() > 200)
+                System.out.println("  ... (" + (missingFiles.size() - 200) + " more)");
 
             System.out.println("\n-- Orphan files on disk (" + orphanFiles.size() + ")");
             orphanFiles.stream().limit(200).forEach(s -> System.out.println("  • " + s));
-            if (orphanFiles.size() > 200) System.out.println("  ... (" + (orphanFiles.size() - 200) + " more)");
+            if (orphanFiles.size() > 200)
+                System.out.println("  ... (" + (orphanFiles.size() - 200) + " more)");
 
             System.out.println("\n-- Mismatched sizes (" + mismatchedSizes.size() + ")");
             mismatchedSizes.stream().limit(200).forEach(s -> System.out.println("  • " + s));
-            if (mismatchedSizes.size() > 200) System.out.println("  ... (" + (mismatchedSizes.size() - 200) + " more)");
+            if (mismatchedSizes.size() > 200)
+                System.out.println("  ... (" + (mismatchedSizes.size() - 200) + " more)");
 
             if (ledgerAvailable) {
                 System.out.println("\n-- Ledger-only tokens/ids (" + ledgerOnly.size() + ")");
                 ledgerOnly.stream().limit(200).forEach(s -> System.out.println("  • " + s));
-                if (ledgerOnly.size() > 200) System.out.println("  ... (" + (ledgerOnly.size() - 200) + " more)");
+                if (ledgerOnly.size() > 200)
+                    System.out.println("  ... (" + (ledgerOnly.size() - 200) + " more)");
             }
 
             System.out.println("\n=== Suggested next steps ===");
-            System.out.println("  1) Investigate missing files: check backups or device uploads for those credential IDs.");
-            System.out.println("  2) Investigate orphan files: determine if they belong to old users or are transient temp files.");
-            System.out.println("  3) For mismatched sizes: re-download from storage or re-encrypt original source if available.");
+            System.out.println(
+                    "  1) Investigate missing files: check backups or device uploads for those credential IDs.");
+            System.out.println(
+                    "  2) Investigate orphan files: determine if they belong to old users or are transient temp files.");
+            System.out.println(
+                    "  3) For mismatched sizes: re-download from storage or re-encrypt original source if available.");
             if (ledgerAvailable) {
-                System.out.println("  4) For ledger-only IDs: inspect ledger block payloads (structure differs between deployments).");
+                System.out.println(
+                        "  4) For ledger-only IDs: inspect ledger block payloads (structure differs between deployments).");
             }
             System.out.println("\nReconciliation finished.\n");
 
@@ -1161,7 +1234,7 @@ public class CommandRouter {
 
     private static long queryCount(java.sql.Connection c, String sql) throws SQLException {
         try (PreparedStatement ps = c.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
+                ResultSet rs = ps.executeQuery()) {
             if (rs.next()) {
                 return rs.getLong(1);
             }
@@ -1170,8 +1243,9 @@ public class CommandRouter {
     }
 
     private static long[] directorySizeAndCount(Path dir) throws IOException {
-        if (!Files.exists(dir) || !Files.isDirectory(dir)) return null;
-        final long[] acc = new long[]{0L, 0L};
+        if (!Files.exists(dir) || !Files.isDirectory(dir))
+            return null;
+        final long[] acc = new long[] { 0L, 0L };
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir)) {
             for (Path p : ds) {
                 if (Files.isRegularFile(p)) {
@@ -1207,13 +1281,16 @@ public class CommandRouter {
     }
 
     /**
-     * Try multiple common method names via reflection to extract a text payload from a ledger block.
+     * Try multiple common method names via reflection to extract a text payload
+     * from a ledger block.
      * Falls back to toString() if no method is present.
      */
     private static String extractTextFromLedgerBlock(com.vaultify.models.LedgerBlock block) {
-        if (block == null) return null;
+        if (block == null)
+            return null;
 
-        String[] candidates = {"getAction", "getActionName", "getPayload", "getData", "getBody", "getDetails", "getMeta", "getContent", "getMessage"};
+        String[] candidates = { "getAction", "getActionName", "getPayload", "getData", "getBody", "getDetails",
+                "getMeta", "getContent", "getMessage" };
 
         for (String mname : candidates) {
             try {
@@ -1222,7 +1299,8 @@ public class CommandRouter {
                     Object val = m.invoke(block);
                     if (val != null) {
                         String s = val.toString().trim();
-                        if (!s.isEmpty()) return s;
+                        if (!s.isEmpty())
+                            return s;
                     }
                 }
             } catch (NoSuchMethodException ignored) {
@@ -1249,5 +1327,206 @@ public class CommandRouter {
         } catch (SQLException e) {
             return false;
         }
+    }
+
+    // ===========================
+    // DEV MODE COMMANDS
+    // ===========================
+
+    /**
+     * Shows current development mode status and configuration.
+     */
+    private static void showDevModeStatus() {
+        System.out.println("\n╔════════════════════════════════════════════════════════╗");
+        System.out.println("║           DEVELOPMENT MODE STATUS                      ║");
+        System.out.println("╚════════════════════════════════════════════════════════╝");
+
+        boolean devMode = Config.isDevMode();
+        System.out.println("\nCurrent Mode: " + (devMode ? "🔧 DEVELOPMENT" : "🔒 PRODUCTION"));
+        System.out.println("Config Source: config.properties");
+        System.out.println("Setting: dev.mode=" + devMode);
+
+        if (devMode) {
+            System.out.println("\n⚠️  DEVELOPMENT MODE ENABLED");
+            System.out.println("\nAvailable dev commands:");
+            System.out.println("  • test-db          - Test database connectivity");
+            System.out.println("  • test-ledger      - Test remote ledger server");
+            System.out.println("  • reset-all        - ⚠️  DESTRUCTIVE: Delete all data");
+            System.out.println("  • dev-mode         - Show this status");
+            System.out.println("\n⚠️  WARNING: reset-all will PERMANENTLY delete:");
+            System.out.println("  - All database tables (users, credentials, tokens)");
+            System.out.println("  - All vault storage files");
+            System.out.println("  - All keys and certificates");
+            System.out.println("  - Ledger data (ledger.json)");
+        } else {
+            System.out.println("\n✓ Production mode - dev commands are disabled");
+            System.out.println("\nTo enable dev mode, set 'dev.mode=true' in config.properties");
+        }
+        System.out.println();
+    }
+
+    /**
+     * DESTRUCTIVE: Resets entire system to initial state.
+     * Deletes all database records, files, keys, and ledger data.
+     * Requires explicit confirmation.
+     */
+    private static void resetAll(Scanner scanner) {
+        System.out.println("\n╔════════════════════════════════════════════════════════╗");
+        System.out.println("║                ⚠️  DANGER ZONE ⚠️                       ║");
+        System.out.println("║           COMPLETE SYSTEM RESET                        ║");
+        System.out.println("╚════════════════════════════════════════════════════════╝");
+
+        System.out.println("\n⚠️  This will PERMANENTLY delete:");
+        System.out.println("  ✗ All user accounts");
+        System.out.println("  ✗ All credentials and encrypted files");
+        System.out.println("  ✗ All access tokens");
+        System.out.println("  ✗ All keys (public/private)");
+        System.out.println("  ✗ All certificates");
+        System.out.println("  ✗ All ledger audit trail");
+        System.out.println("  ✗ All file storage data");
+
+        System.out.print("\nType 'DELETE' (uppercase) to confirm: ");
+        String confirmation = scanner.nextLine().trim();
+
+        if (!"DELETE".equals(confirmation)) {
+            System.out.println("✗ Reset cancelled.");
+            return;
+        }
+
+        System.out.print("\nAre you absolutely sure? Type 'YES' to proceed: ");
+        String secondConfirm = scanner.nextLine().trim();
+
+        if (!"YES".equals(secondConfirm)) {
+            System.out.println("✗ Reset cancelled.");
+            return;
+        }
+
+        System.out.println("\n🔄 Starting system reset...\n");
+
+        int errors = 0;
+
+        // 1. Reset Database
+        System.out.println("[1/4] Resetting database tables...");
+        try {
+            java.sql.Connection conn = com.vaultify.db.Database.getConnection();
+
+            // Disable foreign key checks temporarily
+            try (PreparedStatement stmt = conn.prepareStatement("SET CONSTRAINTS ALL DEFERRED")) {
+                stmt.execute();
+            } catch (SQLException e) {
+                // Try alternative for PostgreSQL
+                try (PreparedStatement stmt = conn.prepareStatement("SET session_replication_role = 'replica'")) {
+                    stmt.execute();
+                }
+            }
+
+            // Delete in order to respect foreign keys
+            String[] tables = { "tokens", "credentials", "users" };
+            for (String table : tables) {
+                try (PreparedStatement stmt = conn.prepareStatement("DELETE FROM " + table)) {
+                    int deleted = stmt.executeUpdate();
+                    System.out.println("  ✓ Deleted " + deleted + " rows from " + table);
+                } catch (SQLException e) {
+                    System.out.println("  ✗ Failed to clear " + table + ": " + e.getMessage());
+                    errors++;
+                }
+            }
+
+            // Re-enable foreign key checks
+            try (PreparedStatement stmt = conn.prepareStatement("SET session_replication_role = 'origin'")) {
+                stmt.execute();
+            } catch (SQLException ignored) {
+            }
+
+            conn.close();
+            System.out.println("  ✓ Database reset complete");
+
+        } catch (Exception e) {
+            System.out.println("  ✗ Database reset failed: " + e.getMessage());
+            errors++;
+        }
+
+        // 2. Delete File Storage
+        System.out.println("\n[2/4] Clearing file storage...");
+        Path vaultData = Paths.get("vault_data");
+        String[] directories = { "credentials", "db/credentials", "db/tokens", "db/users",
+                "keys", "certificates" };
+
+        for (String dir : directories) {
+            Path dirPath = vaultData.resolve(dir);
+            try {
+                if (Files.exists(dirPath)) {
+                    int deleted = deleteDirectoryContents(dirPath);
+                    System.out.println("  ✓ Deleted " + deleted + " files from " + dir);
+                }
+            } catch (IOException e) {
+                System.out.println("  ✗ Failed to clear " + dir + ": " + e.getMessage());
+                errors++;
+            }
+        }
+
+        // 3. Reset Ledger
+        System.out.println("\n[3/4] Resetting ledger...");
+        Path ledgerFile = Paths.get("ledger-server/data/ledger.json");
+        try {
+            if (Files.exists(ledgerFile)) {
+                // Write empty array to reset ledger
+                Files.writeString(ledgerFile, "[]", StandardCharsets.UTF_8);
+                System.out.println("  ✓ Ledger reset to empty state");
+            } else {
+                System.out.println("  ℹ Ledger file not found (already empty)");
+            }
+        } catch (IOException e) {
+            System.out.println("  ✗ Failed to reset ledger: " + e.getMessage());
+            errors++;
+        }
+
+        // 4. Clear session
+        System.out.println("\n[4/4] Clearing session...");
+        try {
+            authService.logout();
+            System.out.println("  ✓ Session cleared");
+        } catch (Exception e) {
+            System.out.println("  ✗ Failed to clear session: " + e.getMessage());
+            errors++;
+        }
+
+        // Final report
+        System.out.println("\n" + "=".repeat(56));
+        if (errors == 0) {
+            System.out.println("✓ SYSTEM RESET COMPLETE");
+            System.out.println("  All data has been permanently deleted.");
+            System.out.println("  The system is now in initial state.");
+        } else {
+            System.out.println("⚠️  SYSTEM RESET COMPLETED WITH " + errors + " ERROR(S)");
+            System.out.println("  Some data may not have been deleted.");
+            System.out.println("  Check error messages above for details.");
+        }
+        System.out.println("=".repeat(56) + "\n");
+    }
+
+    /**
+     * Helper: Delete all contents of a directory without deleting the directory
+     * itself.
+     * Returns count of files deleted.
+     */
+    private static int deleteDirectoryContents(Path dir) throws IOException {
+        int count = 0;
+        if (!Files.exists(dir) || !Files.isDirectory(dir)) {
+            return 0;
+        }
+
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
+            for (Path entry : stream) {
+                if (Files.isDirectory(entry)) {
+                    count += deleteDirectoryContents(entry);
+                    Files.delete(entry);
+                } else {
+                    Files.delete(entry);
+                    count++;
+                }
+            }
+        }
+        return count;
     }
 }

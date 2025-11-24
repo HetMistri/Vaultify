@@ -94,6 +94,27 @@ public class AuthService {
             String encryptedPrivateKeyBase64 = Base64.getEncoder().encodeToString(combined);
             user.setPrivateKeyEncrypted(encryptedPrivateKeyBase64);
 
+            // Persist key artifacts to filesystem for features that expect PEM presence.
+            // We do NOT write the raw unencrypted private key; instead we store the
+            // encrypted blob.
+            try {
+                java.nio.file.Path keysDir = java.nio.file.Paths.get("vault_data", "keys");
+                java.nio.file.Files.createDirectories(keysDir);
+
+                // Public key PEM encoding (RFC 7468 style, 64-char lines)
+                String pubPem = "-----BEGIN PUBLIC KEY-----\n"
+                        + java.util.Base64.getMimeEncoder(64, "\n".getBytes())
+                                .encodeToString(keyPair.getPublic().getEncoded())
+                        + "\n-----END PUBLIC KEY-----\n";
+                java.nio.file.Files.writeString(keysDir.resolve(username + "_public.pem"), pubPem);
+
+                // Encrypted private key blob (IV||ciphertext base64) – not a standard PEM,
+                // store with .enc
+                java.nio.file.Files.writeString(keysDir.resolve(username + "_private.enc"), encryptedPrivateKeyBase64);
+            } catch (Exception ioEx) {
+                System.err.println("[Warning] Failed to write key files: " + ioEx.getMessage());
+            }
+
             // Save to BOTH storage backends for redundancy
             fileUserDAO.save(user); // JSON file backup
             try {

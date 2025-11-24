@@ -14,10 +14,10 @@ import com.vaultify.models.CredentialType;
 
 public class JdbcCredentialDAO {
 
-    public void save(CredentialMetadata meta, long userId) {
+    public long save(CredentialMetadata meta, long userId) {
         String sql = "INSERT INTO credentials (user_id, filename, filepath, encrypted_key, iv, data_hash, file_size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = Database.getConnection();
-                PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                PreparedStatement pstmt = conn.prepareStatement(sql, PreparedStatement.RETURN_GENERATED_KEYS)) {
 
             pstmt.setLong(1, userId);
             pstmt.setString(2, meta.filename);
@@ -29,7 +29,14 @@ public class JdbcCredentialDAO {
             pstmt.setTimestamp(8, new Timestamp(meta.timestamp));
 
             pstmt.executeUpdate();
-
+            try (ResultSet rs = pstmt.getGeneratedKeys()) {
+                if (rs.next()) {
+                    long generatedId = rs.getLong(1);
+                    meta.id = (int) generatedId; // store for downstream usage
+                    return generatedId;
+                }
+            }
+            return 0L; // fallback if no key (shouldn't happen with SERIAL PK)
         } catch (SQLException e) {
             throw new RuntimeException("Error saving credential to DB", e);
         }
@@ -46,6 +53,7 @@ public class JdbcCredentialDAO {
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
                     CredentialMetadata meta = new CredentialMetadata();
+                    meta.id = rs.getInt("id");
                     // Extract ID from filepath for consistency with FileDAO
                     String path = rs.getString("filepath");
                     String filename = new java.io.File(path).getName();
