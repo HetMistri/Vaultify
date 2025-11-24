@@ -109,7 +109,7 @@ public class CommandRouter {
     private static void printHelp() {
         boolean devMode = Config.isDevMode();
 
-        System.out.println("\n=== Vaultify CLI Help" + (devMode ? " [DEV MODE]" : " [PRODUCTION]") + " ===");
+        System.out.println("\n=== Vaultify CLI v0.1 Beta Help" + (devMode ? " [DEV MODE]" : " [PRODUCTION]") + " ===");
         System.out.println("\nCore Commands:");
         System.out.println("  register       - create a new user with RSA key pair");
         System.out.println("  login          - login with username/password");

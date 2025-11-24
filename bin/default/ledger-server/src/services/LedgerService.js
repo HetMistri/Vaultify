@@ -1,5 +1,5 @@
 import { Block } from "../models/Block.js";
-import { readJSON, writeJSON } from "../utils/storage.js";
+import { readJSON, writeJSON, writeJSONAsync } from "../utils/storage.js";
 import { sha256 } from "../utils/crypto.js";
 
 const LEDGER_FILE = "ledger.json";
@@ -33,9 +33,9 @@ export class LedgerService {
   /**
    * Save blockchain to storage
    */
-  saveChain() {
+  async saveChain() {
     const chainData = this.chain.map((block) => block.toJSON());
-    writeJSON(LEDGER_FILE, chainData);
+    await writeJSONAsync(LEDGER_FILE, chainData);
   }
 
   /**
@@ -63,9 +63,9 @@ export class LedgerService {
    * Append a new block to the chain
    * @param {string} action - Action type (e.g., 'GENERATE_CERT', 'REVOKE_TOKEN')
    * @param {string} dataHash - SHA-256 hash of associated data
-   * @returns {Block} Newly created block
+   * @returns {Promise<Block>} Newly created block
    */
-  appendBlock(action, dataHash) {
+  async appendBlock(action, dataHash) {
     const prevBlock = this.getLatestBlock();
     const newBlock = new Block(
       prevBlock.index + 1,
@@ -75,7 +75,7 @@ export class LedgerService {
     );
 
     this.chain.push(newBlock);
-    this.saveChain();
+    await this.saveChain();
 
     return newBlock;
   }
