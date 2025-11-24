@@ -44,4 +44,4 @@ Thumbs.db
 ##############################
 /.lh
 vault_data/
-resources/
+resources/config.properties
