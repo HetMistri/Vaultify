@@ -48,6 +48,9 @@ public class TokenService {
      * @return Token object
      */
     public Token generateAndSaveToken(long issuerUserId, long credentialId, int expiryHours) {
+        if (expiryHours <= 0) {
+            throw new ServiceException("Expiry hours must be positive");
+        }
         String tokenString = TokenUtil.generateToken();
         long expiry = System.currentTimeMillis() + (expiryHours * 3600L * 1000L);
 

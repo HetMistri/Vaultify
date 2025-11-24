@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS credentials (
     encrypted_key TEXT NOT NULL,
     iv TEXT NOT NULL,
     data_hash TEXT NOT NULL,
+    credential_hash TEXT NOT NULL,
     file_size BIGINT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

@@ -91,9 +91,11 @@ com.vaultify/
 │   ├── KeyManager.java
 │   └── HashUtil.java
 ├── repository/       # Repository abstractions (Postgres/File/Dual)
-│   ├── UserRepository.*
-│   ├── CredentialRepository.*
-│   └── TokenRepository.*
+│   ├── RepositoryFactory.java
+│   ├── UserRepository.java
+│   ├── CredentialRepository.java
+│   ├── TokenRepository.java
+│   └── [Impls: Postgres*, File*, Dual*]
 ├── models/           # Domain entities
 │   ├── User.java
 │   ├── Credential.java
@@ -120,6 +122,24 @@ com.vaultify/
     ├── CertificateData.java
     └── VerifierMode.java
 ```
+
+## 🧪 Testing
+
+The project uses **JUnit 5** for unit and integration testing.
+
+### Running Tests
+
+Execute the full test suite using Gradle:
+
+```bash
+./gradlew test
+```
+
+### Test Coverage
+
+- **Repository Tests:** Verify CRUD operations and lifecycle for Credentials, Users, and Tokens.
+- **Service Tests:** Validate business logic and integration with the Ledger.
+- **Crypto Tests:** Ensure correctness of AES/RSA encryption and hashing.
 
 ### Layer Responsibilities
 
@@ -430,27 +450,28 @@ docker compose logs app
 - [x] Docker multi-stage builds
 - [x] Docker Compose with health checks
 
-### 🔄 Phase 2: Core Implementation (In Progress)
+### 🔄 Phase 2: Core Implementation (Completed)
 
-- [ ] Implement AES-256-GCM encryption/decryption
-- [ ] Implement RSA-2048+ key generation and operations
-- [ ] KeyManager for PEM key persistence
-- [ ] Database connection pooling
-- [ ] DAO layer with PreparedStatements
-- [ ] Service layer business logic
-- [ ] CLI command routing and handlers
+- [x] Implement AES-256-GCM encryption/decryption
+- [x] Implement RSA-2048+ key generation and operations
+- [x] KeyManager for PEM key persistence
+- [x] Database connection pooling (via JDBC)
+- [x] Repository layer (replacing DAO)
+- [x] Service layer business logic
+- [x] CLI command routing and handlers
 
-### 📅 Phase 3: Advanced Features (Planned)
+### 📅 Phase 3: Advanced Features (Completed)
 
-- [ ] User registration and authentication
-- [ ] Credential encryption and storage
-- [ ] Token generation and validation
-- [ ] Certificate verification
-- [ ] Ledger integrity monitoring
-- [ ] Activity logging and audit trails
+- [x] User registration and authentication
+- [x] Credential encryption and storage
+- [x] Token generation and validation
+- [x] Certificate verification
+- [x] Ledger integrity monitoring
+- [x] Activity logging and audit trails
 
-### 🧪 Phase 4: Testing & Documentation (Planned)
+### 🧪 Phase 4: Testing & Documentation (In Progress)
 
+- [x] Unit tests for Repository layer
 - [ ] Unit tests for crypto operations
 - [ ] Integration tests for services
 - [ ] End-to-end CLI tests
@@ -469,15 +490,16 @@ docker compose logs app
 - SecureRandom for key/IV generation
 - Environment variable support for credentials
 - `.env` excluded from version control
+- AES-GCM authenticated encryption
+- RSA-OAEP padding for key wrapping
+- SQL injection prevention via PreparedStatements (in Repositories)
 
 **⚠️ Pending Implementation:**
 
-- AES-GCM authenticated encryption
-- RSA-OAEP padding for key wrapping
-- Key derivation functions (PBKDF2/Argon2)
+- Key derivation functions (PBKDF2/Argon2) for password hashing (currently using SHA-256)
 - TLS for database connections
-- Input validation and sanitization
-- SQL injection prevention via PreparedStatements
+- Input validation and sanitization (partial)
+
 - Rate limiting for authentication attempts
 
 ### Best Practices (When Implementing)

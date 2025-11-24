@@ -21,16 +21,18 @@ public class PostgresCredentialRepository implements CredentialRepository {
 
     @Override
     public long save(CredentialMetadata meta, long userId) {
-        // Serialize encryption-related fields into metadata JSON for full persistence
-        String metadataJson = toMetadataJson(meta);
-        String sql = "INSERT INTO credentials (user_id, filename, filepath, metadata, created_at) VALUES (?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO credentials (user_id, filename, filepath, encrypted_key, iv, data_hash, credential_hash, file_size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (Connection conn = Database.getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setLong(1, userId);
             ps.setString(2, meta.filename);
             ps.setString(3, "vault_data/credentials/" + meta.credentialIdString + ".bin");
-            ps.setString(4, metadataJson);
-            ps.setTimestamp(5, new Timestamp(meta.timestamp));
+            ps.setString(4, meta.encryptedKeyBase64);
+            ps.setString(5, meta.ivBase64);
+            ps.setString(6, meta.dataHash);
+            ps.setString(7, meta.credentialHash);
+            ps.setLong(8, meta.fileSize);
+            ps.setTimestamp(9, new Timestamp(meta.timestamp));
             ps.executeUpdate();
             try (ResultSet keys = ps.getGeneratedKeys()) {
                 if (keys.next()) {
@@ -105,69 +107,15 @@ public class PostgresCredentialRepository implements CredentialRepository {
         String path = rs.getString("filepath");
         String filename = new java.io.File(path).getName();
         meta.credentialIdString = filename.replace(".bin", "");
-        String metadataJson = rs.getString("metadata");
-        if (metadataJson != null && !metadataJson.isBlank()) {
-            fromMetadataJson(metadataJson, meta);
-        }
+
+        // Hydrate from flattened columns
+        meta.encryptedKeyBase64 = rs.getString("encrypted_key");
+        meta.ivBase64 = rs.getString("iv");
+        meta.dataHash = rs.getString("data_hash");
+        meta.credentialHash = rs.getString("credential_hash");
+        meta.fileSize = rs.getLong("file_size");
+
         return meta;
     }
 
-    private String toMetadataJson(CredentialMetadata meta) {
-        // Minimal manual JSON to avoid external libs
-        StringBuilder sb = new StringBuilder("{");
-        appendJson(sb, "encryptedKeyBase64", meta.encryptedKeyBase64);
-        sb.append(',');
-        appendJson(sb, "ivBase64", meta.ivBase64);
-        sb.append(',');
-        appendJson(sb, "dataHash", meta.dataHash);
-        sb.append(',');
-        sb.append("\"fileSize\":").append(meta.fileSize);
-        sb.append('}');
-        return sb.toString();
-    }
-
-    private void appendJson(StringBuilder sb, String key, String val) {
-        sb.append('"').append(key).append('"').append(':');
-        if (val == null)
-            sb.append("null");
-        else
-            sb.append('"').append(val.replace("\"", "\\\"")).append('"');
-    }
-
-    private void fromMetadataJson(String json, CredentialMetadata meta) {
-        // Very lightweight parsing assuming flat object with quoted string values and
-        // fileSize number
-        // Not robust for arbitrary JSON; sufficient for controlled writes.
-        try {
-            String trimmed = json.trim();
-            if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-                trimmed = trimmed.substring(1, trimmed.length() - 1); // remove braces
-                String[] parts = trimmed.split(",");
-                for (String part : parts) {
-                    String[] kv = part.split(":", 2);
-                    if (kv.length != 2)
-                        continue;
-                    String key = kv[0].trim().replaceAll("^\"|\"$", "");
-                    String valueRaw = kv[1].trim();
-                    if ("fileSize".equals(key)) {
-                        try {
-                            meta.fileSize = Long.parseLong(valueRaw.replaceAll("[^0-9]", ""));
-                        } catch (NumberFormatException ignored) {
-                        }
-                        continue;
-                    }
-                    if (valueRaw.equals("null")) {
-                        continue;
-                    }
-                    String value = valueRaw.replaceAll("^\"|\"$", "");
-                    switch (key) {
-                        case "encryptedKeyBase64" -> meta.encryptedKeyBase64 = value;
-                        case "ivBase64" -> meta.ivBase64 = value;
-                        case "dataHash" -> meta.dataHash = value;
-                    }
-                }
-            }
-        } catch (Exception ignored) {
-        }
-    }
 }

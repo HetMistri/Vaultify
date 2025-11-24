@@ -27,11 +27,13 @@ public class VaultService {
     }
 
     public String addCredential(long userId, Path filePath, PublicKey userPublicKey) throws Exception {
+        if (filePath == null || !filePath.toFile().exists()) {
+            throw new ServiceException("File does not exist: " + filePath);
+        }
         CredentialMetadata meta = CredentialFileManager.encryptAndStore(filePath, userPublicKey, userId);
         credentialRepository.save(meta, userId);
         String dataHash = HashUtil.sha256(meta.credentialIdString + ":" + meta.dataHash);
         ThreadManager.runAsync(() -> ledgerService.appendBlock(userId, "user_" + userId, "ADD_CREDENTIAL", dataHash));
-        System.out.println("Credential added: " + meta.filename + " (ID: " + meta.credentialIdString + ")");
         return meta.credentialIdString;
     }
 
@@ -40,9 +42,12 @@ public class VaultService {
     }
 
     public byte[] retrieveCredential(String credentialId, PrivateKey userPrivateKey) throws Exception {
+        if (credentialId == null || credentialId.isEmpty()) {
+            throw new ServiceException("Credential ID cannot be empty");
+        }
         CredentialMetadata meta = credentialRepository.findByCredentialId(credentialId);
         if (meta == null) {
-            throw new IllegalArgumentException("Credential not found: " + credentialId);
+            throw new ServiceException("Credential not found: " + credentialId);
         }
         return CredentialFileManager.decryptAndRetrieve(
                 credentialId,
@@ -52,9 +57,12 @@ public class VaultService {
     }
 
     public void deleteCredential(String credentialId, long userId) throws Exception {
+        if (credentialId == null || credentialId.isEmpty()) {
+            throw new ServiceException("Credential ID cannot be empty");
+        }
         CredentialMetadata meta = credentialRepository.findByCredentialId(credentialId);
         if (meta == null) {
-            throw new IllegalArgumentException("Credential not found: " + credentialId);
+            throw new ServiceException("Credential not found: " + credentialId);
         }
         if (meta.userId != userId) {
             throw new SecurityException("Unauthorized: credential belongs to different user");

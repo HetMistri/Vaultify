@@ -52,8 +52,11 @@ public class CredentialFileManager {
         byte[] aesKey = AESEngine.generateKey();
         byte[] iv = AESEngine.generateIv();
 
-        // Encrypt file with AES-GCM
-        byte[] ciphertext = AESEngine.encryptWithParams(plaintext, aesKey, iv);
+        // Encrypt file with AES-GCM (using ThreadManager for async execution if large,
+        // but here we block for result)
+        // Using EncryptionTask to utilize the threading layer
+        com.vaultify.threading.EncryptionTask task = new com.vaultify.threading.EncryptionTask(plaintext, aesKey, iv);
+        byte[] ciphertext = com.vaultify.threading.ThreadManager.submit(task).get();
 
         // Wrap AES key with user's RSA public key
         byte[] wrappedKey = RSAEngine.encryptWithKey(aesKey, userPublicKey);

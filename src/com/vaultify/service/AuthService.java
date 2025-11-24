@@ -44,12 +44,12 @@ public class AuthService {
      */
     public User register(String username, String password) {
         if (username == null || username.isEmpty() || password == null || password.isEmpty()) {
-            throw new IllegalArgumentException("Username and password cannot be empty");
+            throw new ServiceException("Username and password cannot be empty");
         }
 
         // Check if user already exists (check both storages)
         if (userRepository.findByUsername(username) != null) {
-            return null; // Username already taken
+            throw new ServiceException("Username already exists");
         }
 
         try {
@@ -124,7 +124,7 @@ public class AuthService {
 
             return user;
         } catch (Exception e) {
-            throw new RuntimeException("Failed to register user: " + e.getMessage(), e);
+            throw new ServiceException("Failed to register user: " + e.getMessage(), e);
         }
     }
 
@@ -189,6 +189,8 @@ public class AuthService {
 
             return true;
         } catch (Exception e) {
+            // Log error but return false for security
+            System.err.println("Login failed: " + e.getMessage());
             return false;
         }
     }
