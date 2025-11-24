@@ -110,20 +110,7 @@ public class TokenService {
         // Step A2: Read issuer public key for inclusion
         String issuerPublicKeyPem = Files.readString(issuerPublicKeyPath);
 
-        // Step A3: Compute payloadHash = SHA256(tokenHash + credentialId +
-        // issuerPublicKey + expiry)
-        String payloadData = tokenHash + "|" + token.getCredentialId() + "|" +
-                issuerPublicKeyPem + "|" + token.getExpiry().getTime();
-        String payloadHash = HashUtil.sha256(payloadData);
-
-        // Step A4: Sign payloadHash using RSA private key
-        Signature sig = Signature.getInstance("SHA256withRSA");
-        sig.initSign(issuerPrivateKey);
-        sig.update(payloadHash.getBytes());
-        byte[] signature = sig.sign();
-        String signatureBase64 = Base64.getEncoder().encodeToString(signature);
-
-        // Step A5: Submit to Ledger Server
+        // Step A3: Submit to Ledger Server first to get block hash
         String dataHash = HashUtil.sha256(tokenHash + ":" + token.getCredentialId());
         LedgerBlock block = ledgerService.appendBlock(
                 token.getIssuerUserId(),
@@ -133,6 +120,28 @@ public class TokenService {
                 Long.toString(token.getCredentialId()),
                 tokenHash);
         String ledgerBlockHash = block != null ? block.getHash() : "";
+
+        // Step A4: Build payload JSON that matches what ledger server expects
+        // This MUST match the exact JSON structure the server will validate
+        String payloadJson = String.format(
+                "{\"issuerUserId\":%d,\"credentialId\":%d,\"tokenHash\":\"%s\",\"expiry\":%d,\"ledgerBlockHash\":\"%s\"}",
+                token.getIssuerUserId(),
+                token.getCredentialId(),
+                tokenHash,
+                token.getExpiry().getTime(),
+                ledgerBlockHash);
+
+        // Step A5: Sign the payload JSON using RSA private key
+        Signature sig = Signature.getInstance("SHA256withRSA");
+        sig.initSign(issuerPrivateKey);
+        sig.update(payloadJson.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        byte[] signature = sig.sign();
+        String signatureBase64 = Base64.getEncoder().encodeToString(signature);
+
+        // Step A6: Compute payloadHash for local verification (legacy field)
+        String payloadData = tokenHash + "|" + token.getCredentialId() + "|" +
+                issuerPublicKeyPem + "|" + token.getExpiry().getTime();
+        String payloadHash = HashUtil.sha256(payloadData);
 
         // Build Certificate
         Certificate cert = new Certificate();
@@ -147,7 +156,7 @@ public class TokenService {
         cert.ledgerBlockHash = ledgerBlockHash;
         cert.signatureBase64 = signatureBase64;
 
-        // Step A6: Register certificate with ledger server
+        // Step A7: Register certificate with ledger server
         LedgerClient.storeCertificate(cert);
 
         CertificateParser.save(cert, outputPath);
