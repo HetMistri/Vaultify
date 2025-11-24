@@ -170,7 +170,7 @@ public class LedgerClient {
     /**
      * Store a certificate in the ledger server
      */
-    public static boolean storeCertificate(Certificate certificate) {
+    public static void storeCertificate(Certificate certificate) {
         try {
             String certificateJson = gson.toJson(certificate);
 
@@ -182,11 +182,10 @@ public class LedgerClient {
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-            return response.statusCode() == 201;
+            response.statusCode();
 
         } catch (IOException | InterruptedException e) {
             System.err.println("✗ ERROR: Could not store certificate on ledger server: " + e.getMessage());
-            return false;
         }
     }
 
