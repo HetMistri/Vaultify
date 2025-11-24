@@ -114,7 +114,7 @@ public class LedgerClient {
     public static LedgerBlock getBlockByHash(String hash) {
         try {
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(LEDGER_API_BASE_URL + "/ledger/block/" + hash))
+                    .uri(URI.create(LEDGER_API_BASE_URL + "/ledger/blocks/" + hash))
                     .GET()
                     .build();
 
@@ -122,14 +122,21 @@ public class LedgerClient {
 
             switch (response.statusCode()) {
                 case 200 -> {
-                    JsonObject responseBody = gson.fromJson(response.body(), JsonObject.class);
-                    JsonObject blockJson = responseBody.getAsJsonObject("block");
+                    // Server returns block directly, not wrapped in "block" field
+                    JsonObject blockJson = gson.fromJson(response.body(), JsonObject.class);
+                    if (blockJson == null) {
+                        System.err.println("✗ ERROR: Server returned null block");
+                        return null;
+                    }
                     return parseLedgerBlock(blockJson);
                 }
                 case 404 -> {
                     return null;
                 }
-                default -> throw new RuntimeException("Failed to get block: " + response.body());
+                default -> {
+                    System.err.println("✗ ERROR: Unexpected status " + response.statusCode() + ": " + response.body());
+                    return null;
+                }
             }
 
         } catch (IOException | InterruptedException | RuntimeException e) {
@@ -172,17 +179,33 @@ public class LedgerClient {
      */
     public static void storeCertificate(Certificate certificate) {
         try {
-            String certificateJson = gson.toJson(certificate);
+            // Build payload matching server's expected structure
+            JsonObject payload = new JsonObject();
+            payload.addProperty("issuerUserId", certificate.issuerUserId);
+            payload.addProperty("credentialId", certificate.credentialId);
+            payload.addProperty("tokenHash", certificate.tokenHash);
+            payload.addProperty("expiry", certificate.expiryEpochMs);
+            payload.addProperty("ledgerBlockHash", certificate.ledgerBlockHash);
+
+            // Build request body with certificateId, payload, signature, issuerPublicKey
+            JsonObject requestBody = new JsonObject();
+            requestBody.addProperty("certificateId", certificate.tokenHash); // Use tokenHash as unique ID
+            requestBody.add("payload", payload);
+            requestBody.addProperty("signature", certificate.signatureBase64);
+            requestBody.addProperty("issuerPublicKey", certificate.issuerPublicKeyPem);
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(LEDGER_API_BASE_URL + "/certificates"))
                     .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(certificateJson))
+                    .POST(HttpRequest.BodyPublishers.ofString(gson.toJson(requestBody)))
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-            response.statusCode();
+            if (response.statusCode() != 201) {
+                System.err.println("✗ WARNING: Certificate registration returned status " + response.statusCode()
+                        + ": " + response.body());
+            }
 
         } catch (IOException | InterruptedException e) {
             System.err.println("✗ ERROR: Could not store certificate on ledger server: " + e.getMessage());
@@ -190,12 +213,12 @@ public class LedgerClient {
     }
 
     /**
-     * Get a certificate by token from the ledger server
+     * Get a certificate by tokenHash from the ledger server
      */
-    public static Certificate getCertificate(String token) {
+    public static Certificate getCertificate(String tokenHash) {
         try {
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(LEDGER_API_BASE_URL + "/certificates/" + token))
+                    .uri(URI.create(LEDGER_API_BASE_URL + "/certificates/" + tokenHash))
                     .GET()
                     .build();
 
@@ -203,14 +226,40 @@ public class LedgerClient {
 
             switch (response.statusCode()) {
                 case 200 -> {
-                    JsonObject responseBody = gson.fromJson(response.body(), JsonObject.class);
-                    JsonObject certJson = responseBody.getAsJsonObject("certificate");
-                    return gson.fromJson(certJson, Certificate.class);
+                    // Server returns certificate directly (not wrapped in "certificate" field)
+                    JsonObject certJson = gson.fromJson(response.body(), JsonObject.class);
+
+                    if (certJson == null) {
+                        System.err.println("✗ ERROR: Server returned null certificate");
+                        return null;
+                    }
+
+                    // Parse the payload structure from server
+                    JsonObject payloadObj = certJson.getAsJsonObject("payload");
+                    if (payloadObj == null) {
+                        System.err.println("✗ ERROR: Certificate missing payload field");
+                        return null;
+                    }
+
+                    Certificate cert = new Certificate();
+                    cert.tokenHash = certJson.get("certificateId").getAsString();
+                    cert.issuerUserId = payloadObj.get("issuerUserId").getAsLong();
+                    cert.credentialId = payloadObj.get("credentialId").getAsLong();
+                    cert.expiryEpochMs = payloadObj.get("expiry").getAsLong();
+                    cert.ledgerBlockHash = payloadObj.get("ledgerBlockHash").getAsString();
+                    cert.signatureBase64 = certJson.get("signature").getAsString();
+                    cert.issuerPublicKeyPem = certJson.get("issuerPublicKey").getAsString();
+                    cert.createdAtMs = certJson.has("createdAt") ? certJson.get("createdAt").getAsLong() : 0;
+
+                    return cert;
                 }
                 case 404 -> {
                     return null;
                 }
-                default -> throw new RuntimeException("Failed to get certificate: " + response.body());
+                default -> {
+                    System.err.println("✗ ERROR: Unexpected status " + response.statusCode() + ": " + response.body());
+                    return null;
+                }
             }
 
         } catch (IOException | InterruptedException | RuntimeException e) {
@@ -261,7 +310,11 @@ public class LedgerClient {
 
             if (response.statusCode() == 200) {
                 JsonObject responseBody = gson.fromJson(response.body(), JsonObject.class);
-                return responseBody.get("revoked").getAsBoolean();
+                // Server returns "isRevoked" field, not "revoked"
+                if (responseBody.has("isRevoked")) {
+                    return responseBody.get("isRevoked").getAsBoolean();
+                }
+                return false;
             } else {
                 return false;
             }

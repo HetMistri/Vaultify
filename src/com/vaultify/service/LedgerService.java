@@ -13,11 +13,7 @@ import com.vaultify.models.LedgerBlock;
 public class LedgerService {
 
     public LedgerService() {
-        // Check server availability on startup
-        if (!LedgerClient.isServerAvailable()) {
-            System.err.println("⚠ WARNING: Ledger server is not available!");
-            System.err.println("  Please start the ledger server: cd ledger-server && npm start");
-        }
+        // Ledger availability is checked on demand or by health check
     }
 
     public LedgerBlock appendBlock(String action, String dataHash) {

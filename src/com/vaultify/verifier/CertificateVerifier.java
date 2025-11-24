@@ -1,10 +1,10 @@
 package com.vaultify.verifier;
 
+import java.security.KeyFactory;
 import java.security.PublicKey;
 import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
-import java.security.KeyFactory;
 
 import com.vaultify.client.LedgerClient;
 import com.vaultify.crypto.HashUtil;
@@ -38,7 +38,7 @@ public class CertificateVerifier {
             System.out.println("🔵 LAYER 1: Certificate Signature Validation");
             System.out.println("   Verifying RSA signature...");
 
-            // Reconstruct payloadHash from cert data
+            // Reconstruct payloadHash from cert data (for integrity check)
             String payloadData = cert.tokenHash + "|" + cert.credentialId + "|" +
                     cert.issuerPublicKeyPem + "|" + cert.expiryEpochMs;
             String recomputedPayloadHash = HashUtil.sha256(payloadData);
@@ -47,13 +47,22 @@ public class CertificateVerifier {
                 return fail("   ✗ PayloadHash mismatch - certificate tampered");
             }
 
+            // Reconstruct the JSON payload that was signed (matches server format)
+            String payloadJson = String.format(
+                    "{\"issuerUserId\":%d,\"credentialId\":%d,\"tokenHash\":\"%s\",\"expiry\":%d,\"ledgerBlockHash\":\"%s\"}",
+                    cert.issuerUserId,
+                    cert.credentialId,
+                    cert.tokenHash,
+                    cert.expiryEpochMs,
+                    cert.ledgerBlockHash);
+
             // Load issuer public key from PEM string
             PublicKey issuerPublicKey = loadPublicKeyFromPem(cert.issuerPublicKeyPem);
 
-            // Verify signature over payloadHash
+            // Verify signature over the JSON payload (not the hash)
             Signature sig = Signature.getInstance("SHA256withRSA");
             sig.initVerify(issuerPublicKey);
-            sig.update(cert.payloadHash.getBytes());
+            sig.update(payloadJson.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             byte[] signatureBytes = Base64.getDecoder().decode(cert.signatureBase64);
 
             if (!sig.verify(signatureBytes)) {

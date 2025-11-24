@@ -1,0 +1,7 @@
+node_modules/
+data/ledger.json
+data/certificates.json
+data/revoked-tokens.json
+*.log
+.env
+.DS_Store

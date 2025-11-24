@@ -34,6 +34,7 @@ public class Database {
                 "ALTER TABLE credentials ADD COLUMN IF NOT EXISTS encrypted_key TEXT",
                 "ALTER TABLE credentials ADD COLUMN IF NOT EXISTS iv TEXT",
                 "ALTER TABLE credentials ADD COLUMN IF NOT EXISTS data_hash TEXT",
+                "ALTER TABLE credentials ADD COLUMN IF NOT EXISTS credential_hash TEXT",
                 "ALTER TABLE credentials ADD COLUMN IF NOT EXISTS file_size BIGINT",
                 "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS issuer_user_id INT",
                 "ALTER TABLE tokens ADD COLUMN IF NOT EXISTS revoked BOOLEAN DEFAULT FALSE",
