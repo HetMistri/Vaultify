@@ -36,6 +36,12 @@ public class VerificationService {
      * Appends VALIDATE_CERT entry to ledger.
      */
     public CertificateVerifier.Result verifyCertificate(Path certPath, String token) throws Exception {
+        if (certPath == null || !certPath.toFile().exists()) {
+            throw new ServiceException("Certificate file not found: " + certPath);
+        }
+        if (token == null || token.isEmpty()) {
+            throw new ServiceException("Token cannot be empty");
+        }
         Certificate cert = CertificateParser.parse(certPath);
 
         // Perform complete 4-layer verification

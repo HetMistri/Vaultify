@@ -11,7 +11,7 @@ import { sha256 } from "../utils/crypto.js";
  * Revoke a token
  * POST /api/tokens/revoke
  */
-export const revokeToken = (req, res) => {
+export const revokeToken = async (req, res) => {
   try {
     const { tokenHash, reason } = req.body;
 
@@ -21,10 +21,10 @@ export const revokeToken = (req, res) => {
     }
 
     // Revoke token
-    const revocationInfo = tokenService.revokeToken(tokenHash, reason);
+    const revocationInfo = await tokenService.revokeToken(tokenHash, reason);
 
     // Append to ledger
-    const block = ledgerService.appendBlock("REVOKE_TOKEN", tokenHash);
+    const block = await ledgerService.appendBlock("REVOKE_TOKEN", tokenHash);
 
     res.status(201).json({
       message: "Token revoked successfully",
@@ -81,7 +81,7 @@ export const getAllRevokedTokens = (req, res) => {
  * Register a user's public key
  * POST /api/users/:userId/public-key
  */
-export const registerPublicKey = (req, res) => {
+export const registerPublicKey = async (req, res) => {
   try {
     const { userId } = req.params;
     const { publicKey } = req.body;
@@ -92,11 +92,11 @@ export const registerPublicKey = (req, res) => {
     }
 
     // Register public key
-    tokenService.registerPublicKey(userId, publicKey);
+    await tokenService.registerPublicKey(userId, publicKey);
 
     // Append to ledger
     const publicKeyHash = sha256(publicKey);
-    const block = ledgerService.appendBlock(
+    const block = await ledgerService.appendBlock(
       "REGISTER_PUBLIC_KEY",
       publicKeyHash
     );

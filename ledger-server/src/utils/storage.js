@@ -1,4 +1,5 @@
 import fs from "fs";
+import fsPromises from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -35,7 +36,7 @@ export function readJSON(filename, defaultValue = null) {
 }
 
 /**
- * Write JSON file
+ * Write JSON file (Synchronous)
  * @param {string} filename - Name of the file (e.g., 'ledger.json')
  * @param {any} data - Data to write
  * @returns {boolean} Success status
@@ -45,6 +46,24 @@ export function writeJSON(filename, data) {
 
   try {
     fs.writeFileSync(filepath, JSON.stringify(data, null, 2), "utf8");
+    return true;
+  } catch (error) {
+    console.error(`Error writing ${filename}:`, error.message);
+    return false;
+  }
+}
+
+/**
+ * Write JSON file (Asynchronous)
+ * @param {string} filename - Name of the file (e.g., 'ledger.json')
+ * @param {any} data - Data to write
+ * @returns {Promise<boolean>} Success status
+ */
+export async function writeJSONAsync(filename, data) {
+  const filepath = path.join(DATA_DIR, filename);
+
+  try {
+    await fsPromises.writeFile(filepath, JSON.stringify(data, null, 2), "utf8");
     return true;
   } catch (error) {
     console.error(`Error writing ${filename}:`, error.message);

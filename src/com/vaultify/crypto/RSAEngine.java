@@ -1,21 +1,33 @@
 package com.vaultify.crypto;
 
-import java.security.*;
-import javax.crypto.Cipher;
+import java.security.Key;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.spec.MGF1ParameterSpec;
+
+import javax.crypto.Cipher;
 import javax.crypto.spec.OAEPParameterSpec;
 import javax.crypto.spec.PSource;
 
 public class RSAEngine implements CryptoEngine {
 
     @Override
-    public byte[] encrypt(byte[] data) throws Exception {
-        throw new UnsupportedOperationException("Use encryptWithKey(publicKey)");
+    public byte[] encrypt(byte[] data, Key key) throws Exception {
+        if (!(key instanceof PublicKey)) {
+            throw new IllegalArgumentException("RSA encryption requires a PublicKey");
+        }
+        return encryptWithKey(data, (PublicKey) key);
     }
 
     @Override
-    public byte[] decrypt(byte[] data) throws Exception {
-        throw new UnsupportedOperationException("Use decryptWithKey(privateKey)");
+    public byte[] decrypt(byte[] data, Key key) throws Exception {
+        if (!(key instanceof PrivateKey)) {
+            throw new IllegalArgumentException("RSA decryption requires a PrivateKey");
+        }
+        return decryptWithKey(data, (PrivateKey) key);
     }
 
     public static KeyPair generateKeyPair(int keySize) {

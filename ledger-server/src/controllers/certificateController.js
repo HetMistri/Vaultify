@@ -12,7 +12,7 @@ import { sha256 } from "../utils/crypto.js";
  * Register a new certificate
  * POST /api/certificates
  */
-export const registerCertificate = (req, res) => {
+export const registerCertificate = async (req, res) => {
   try {
     const { certificateId, payload, signature, issuerPublicKey } = req.body;
 
@@ -48,7 +48,7 @@ export const registerCertificate = (req, res) => {
     }
 
     // Register certificate
-    const certificate = certificateService.registerCertificate(
+    const certificate = await certificateService.registerCertificate(
       certificateId,
       payload,
       signature,
