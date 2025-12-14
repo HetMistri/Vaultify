@@ -42,6 +42,7 @@ Vaultify allows you to:
 
 ✅ Verify credential integrity across different machines
 
+
 # 🧠 How Vaultify Works
 
 At a high level:
