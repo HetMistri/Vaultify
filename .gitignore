@@ -80,5 +80,5 @@ hs_err_pid*
 ##############################
 /.lh
 vault_data/
-resources/config.properties
-!resources/config.properties.example
+# config.properties is now safe to commit (no sensitive data)
+# Sensitive data moved to .env which is gitignored above
