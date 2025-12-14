@@ -58,15 +58,13 @@ At a high level:
 You do not need cryptography knowledge—Vaultify handles this internally.
 
 # 📦 Download & Run
-Step 1 — Download
+Step 1 — Download Launcher
 
-Visit the Releases page on GitHub
+Visit the Releases page on GitHub or https://github.com/HetMistri/Vaultify/releases/tag/Launcher
 
-Download the latest vaultify release folder
+Download the latest vaultify launcher
 
 Step 2 — Launch
-
-From the extracted folder:
 
 Windows
 

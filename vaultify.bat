@@ -2,7 +2,7 @@
 setlocal enableextensions
 set REPO_OWNER=HetMistri
 set REPO_NAME=Vaultify
-set RELEASE_URL=https://github.com/%REPO_OWNER%/%REPO_NAME%/releases/latest/download/vaultify.jar
+set RELEASE_URL=https://github.com/%REPO_OWNER%/%REPO_NAME%/releases/download/Latest/vaultify.jar
 set SCRIPT_DIR=%~dp0
 set JAR_PATH=%SCRIPT_DIR%src\vaultify.jar
 set DATA_DIR=%SCRIPT_DIR%vault_data
@@ -21,4 +21,4 @@ if not exist "%JAR_PATH%" (
 
 echo [Vaultify] Launching...
 java -jar "%JAR_PATH%"
-endlocal
+pause
