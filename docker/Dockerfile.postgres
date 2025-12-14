@@ -1,7 +1,0 @@
-FROM postgres:16
-
-ENV POSTGRES_DB=vaultify_db
-ENV POSTGRES_USER=vaultify_user
-ENV POSTGRES_PASSWORD=secret123
-
-COPY init-db.sql /docker-entrypoint-initdb.d/
