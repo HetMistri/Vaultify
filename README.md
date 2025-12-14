@@ -147,10 +147,15 @@ Verify integrity using `verify-ledger`
 🔒 Security Design
 
 **AES-256-GCM:** Provides confidentiality and integrity for stored data
+
 **RSA-2048:** Used to wrap AES encryption keys per user
+
 **SHA-256:** Hashes actions for ledger integrity
+
 **Encrypted Private Keys:** Private keys are encrypted at rest and unlocked only during login
+
 **Time-Limited Tokens:** Tokens expire automatically and can be revoked
+
 **Ledger Verification:** Detects unauthorized changes or rollback attempts
 
 ⚙️ Requirements
@@ -158,6 +163,7 @@ Verify integrity using `verify-ledger`
 To run Vaultify:
 
 🌐 Network access to the remote ledger server
+
 📁 Permission to read/write the `vault_data` directory
 
 Configuration is handled through the provided config file in the release.
