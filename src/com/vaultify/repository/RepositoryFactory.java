@@ -36,52 +36,33 @@ public final class RepositoryFactory {
         } catch (IOException ignored) {
         }
         String mode = props.getProperty(MODE_KEY, "dual").trim().toLowerCase();
-        switch (mode) {
-            case "jdbc":
-            case "file":
-            case "dual":
-                return mode;
-            default:
-                return "dual"; // safe default
+        // Force JDBC mode for production integrity when config requests jdbc
+        if ("jdbc".equals(mode)) {
+            return "jdbc";
         }
+        // If mode is invalid or unspecified, default to jdbc (no file-based
+        // persistence)
+        if (!"file".equals(mode) && !"dual".equals(mode)) {
+            return "jdbc";
+        }
+        return mode;
     }
 
     // User Repository
     public UserRepository userRepository() {
-        switch (storageMode) {
-            case "jdbc":
-                return new PostgresUserRepository();
-            case "file":
-                return new FileUserRepository();
-            case "dual":
-            default:
-                return new DualUserRepository(new PostgresUserRepository(), new FileUserRepository());
-        }
+        // Enforce JDBC-only repositories
+        return new PostgresUserRepository();
     }
 
     // Credential Repository
     public CredentialRepository credentialRepository() {
-        switch (storageMode) {
-            case "jdbc":
-                return new PostgresCredentialRepository();
-            case "file":
-                return new FileCredentialRepository();
-            case "dual":
-            default:
-                return new DualCredentialRepository(new PostgresCredentialRepository(), new FileCredentialRepository());
-        }
+        // Enforce JDBC-only repositories
+        return new PostgresCredentialRepository();
     }
 
     // Token Repository
     public TokenRepository tokenRepository() {
-        switch (storageMode) {
-            case "jdbc":
-                return new PostgresTokenRepository();
-            case "file":
-                return new FileTokenRepository();
-            case "dual":
-            default:
-                return new DualTokenRepository(new PostgresTokenRepository(), new FileTokenRepository());
-        }
+        // Enforce JDBC-only repositories
+        return new PostgresTokenRepository();
     }
 }

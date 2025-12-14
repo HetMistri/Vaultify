@@ -23,6 +23,12 @@ public class VaultifyApplication {
                 3600, // Period: 1 hour
                 TimeUnit.SECONDS);
         System.out.println("Token cleanup scheduler started (runs hourly)");
+        System.out.println("===============================================");
+        System.out.println("  Welcome to Vaultify v0.1-beta");
+        System.out.println("  Secure Credential Vault System");
+        System.out.println("===============================================");
+        System.out.println("Type 'help' for commands or 'register' to start");
+        System.out.println();
 
         // Add shutdown hook for graceful cleanup
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

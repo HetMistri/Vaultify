@@ -1,15 +1,17 @@
 package com.vaultify.repository;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.vaultify.models.Token;
-
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.vaultify.models.Token;
 
 public class FileTokenRepository implements TokenRepository {
     private static final String DIR = "vault_data/db/tokens";
@@ -17,11 +19,8 @@ public class FileTokenRepository implements TokenRepository {
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
 
     public FileTokenRepository() {
-        try {
-            Files.createDirectories(basePath);
-        } catch (IOException e) {
-            throw new RepositoryException("Init token dir", e);
-        }
+        // Disable file-based repository usage
+        throw new RepositoryException("FileTokenRepository is disabled. Use JDBC/PostgresTokenRepository.");
     }
 
     private Path fileFor(String token) {
