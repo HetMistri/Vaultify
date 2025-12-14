@@ -42,7 +42,8 @@ Vaultify allows you to:
 
 ✅ Verify credential integrity across different machines
 
-🧠 How Vaultify Works
+
+#🧠 How Vaultify Works
 
 At a high level:
 
@@ -56,15 +57,18 @@ At a high level:
 
 You do not need cryptography knowledge—Vaultify handles this internally.
 
-📦 Download & Run
+#📦 Download & Run
+
 Step 1 — Download
 
 Visit the Releases page on GitHub
+
 Download the latest vaultify release folder
 
 Step 2 — Launch
 
 From the extracted folder:
+
 Windows
 
 ```sh
@@ -78,6 +82,7 @@ Mac / Linux
 ```
 
 (If needed: `chmod +x vaultify.sh`)
+
 You will see:
 
 ```sh
