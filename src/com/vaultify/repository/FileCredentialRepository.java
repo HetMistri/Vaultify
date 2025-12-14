@@ -23,11 +23,8 @@ public class FileCredentialRepository implements CredentialRepository {
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
 
     public FileCredentialRepository() {
-        try {
-            Files.createDirectories(basePath);
-        } catch (IOException e) {
-            throw new RepositoryException("Init file cred dir", e);
-        }
+        // Disable file-based repository usage
+        throw new RepositoryException("FileCredentialRepository is disabled. Use JDBC/PostgresCredentialRepository.");
     }
 
     private Path fileFor(String id) {

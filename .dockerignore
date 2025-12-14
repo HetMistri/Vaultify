@@ -5,3 +5,8 @@ out
 *.log
 .vscode
 .idea
+node_modules
+vault_data
+ledger-server
+docker-compose.yml
+.git

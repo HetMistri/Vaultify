@@ -25,11 +25,8 @@ public class FileUserRepository implements UserRepository {
     private final Path basePath = Paths.get(USER_DIR);
 
     public FileUserRepository() {
-        try {
-            Files.createDirectories(basePath);
-        } catch (IOException e) {
-            throw new RepositoryException("Init file user dir", e);
-        }
+        // Disable file-based repository usage
+        throw new RepositoryException("FileUserRepository is disabled. Use JDBC/PostgresUserRepository.");
     }
 
     private Path fileFor(String username) {

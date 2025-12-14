@@ -20,6 +20,19 @@ services:
       timeout: 5s
       retries: 5
 
+  ledger:
+    build:
+      context: ./ledger-server
+      dockerfile: Dockerfile
+    image: vaultify-ledger
+    container_name: vaultify_ledger
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+    volumes:
+      - ./ledger-server/data:/app/data
+
   app:
     build:
       context: .
@@ -31,6 +44,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      ledger:
+        condition: service_started
     stdin_open: true          # REQUIRED for interactive CLI
     tty: true                 # REQUIRED for prompt display
     command: ["/bin/sh", "-c", "java -jar /app/app.jar"]
@@ -38,6 +53,7 @@ services:
       DB_URL: jdbc:postgresql://db:5432/vaultify_db
       DB_USER: ${POSTGRES_USER:-vaultify_user}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-secret123}
+      LEDGER_API_URL: http://ledger:3000/api
     volumes:
       - ./vault_data:/app/vault_data
 volumes:
