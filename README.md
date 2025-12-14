@@ -43,8 +43,11 @@ Vaultify allows you to:
 At a high level:
 
 🔒 Credentials are encrypted using AES-256-GCM
+
 🔑 Each user has a unique RSA-2048 key pair
+
 📜 Every sensitive action is logged to a remote ledger
+
 🔍 Integrity can be verified at any time
 
 You do not need cryptography knowledge—Vaultify handles this internally.
