@@ -33,9 +33,13 @@ It is designed to demonstrate secure system design, modern cryptography, and rea
 Vaultify allows you to:
 
 ✅ Store files and secrets encrypted on your local machine
+
 ✅ Manage credentials through a simple command-line interface
+
 ✅ Share credentials using time-limited access tokens
+
 ✅ Detect tampering using a blockchain-style audit ledger
+
 ✅ Verify credential integrity across different machines
 
 🧠 How Vaultify Works
