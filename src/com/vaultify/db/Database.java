@@ -9,9 +9,9 @@ import com.vaultify.util.Config;
 
 public class Database {
 
-    private static final String URL = Config.get("db.url", "jdbc:postgresql://localhost:5432/vaultify");
-    private static final String USER = Config.get("db.user", "postgres");
-    private static final String PASSWORD = Config.get("db.password", "admin");
+    private static final String URL = Config.get("DB_URL" );
+    private static final String USER = Config.get("DB_USER");
+    private static final String PASSWORD = Config.get("DB_PASSWORD");
 
     private static volatile boolean SCHEMA_UPGRADED = false;
 

@@ -65,6 +65,8 @@ Desktop.ini
 .env
 .env.DEVELOPMENT
 .env.test
+# EXCEPTION: resources/.env is allowed (bundled in jar for production)
+!resources/.env
 
 ##############################
 # Java

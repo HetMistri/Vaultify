@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-REPO_OWNER="HetMistri"
-REPO_NAME="Vaultify"
-RELEASE_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/Latest/vaultify.jar"
+RELEASE_URL="https://github.com/HetMistri/Vaultify/releases/download/Release/vaultify.jar"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 JAR_PATH="${SCRIPT_DIR}/src/vaultify.jar"
 DATA_DIR="${SCRIPT_DIR}/vault_data"

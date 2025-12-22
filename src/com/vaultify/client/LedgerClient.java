@@ -22,7 +22,8 @@ import com.vaultify.verifier.Certificate;
  * This is the ONLY way to interact with the ledger - no local fallback.
  */
 public class LedgerClient {
-    private static final String LEDGER_API_BASE_URL = Config.get("ledger.api.url", "https://ledger-service-rbc0.onrender.com/api");
+    private static final String LEDGER_API_BASE_URL = Config.get("LEDGER_API_URL",
+            "https://ledger-service-rbc0.onrender.com/api");
     private static final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
             .build();
